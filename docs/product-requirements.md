@@ -181,9 +181,9 @@ Full-feature V1 requires every P0 and P1 requirement to be Done, followed by the
 
 ## 8. Current baseline
 
-The local application has established the account-free app, persistent service, Army room, complete project-room lifecycle, persistent agent registry, fake local and remote-ACP execution, a real local OpenCode ACP adapter, durable native and demo sessions, execution evidence, connectivity health, execution supervision, queued/active stop, process-tree cleanup, room-bound questions/approvals, known-safe retry, unknown-outcome recovery, responsive management screens, and offline integration/browser tests.
+The local application has established the account-free app, persistent service, Army room, complete project-room lifecycle, persistent agent registry, fake local and remote-ACP execution, a real local OpenCode ACP adapter, durable native and demo sessions, execution evidence, connectivity health, execution supervision, queued/active stop, process-tree cleanup, room-bound native questions/approvals with complete operation details, known-safe retry, unknown-outcome recovery, responsive management screens, and offline integration/browser tests.
 
-Real OpenCode acceptance has proven native file creation, correct origin/agent/node/room identity, queued/running/waiting/completed history, workspace-only task artifacts within an isolated acceptance root, native session resume after a Hub restart, native permission approval, active stop, provider-failure recording, descendant cleanup, and successful post-failure execution in the same native session. Provider credentials remain in OpenCode's own profile rather than Hub configuration. This acceptance is not an operating-system sandbox and does not prevent OpenCode from maintaining its own profile/session storage.
+Real OpenCode acceptance has proven native file creation, correct origin/agent/node/room identity, queued/running/waiting/completed history, workspace-only task artifacts within an isolated acceptance root, native session resume after a Hub restart, detailed native permission approval, a real `elicitation/create` form question, active stop, provider-failure recording, descendant cleanup, and successful post-failure execution in the same native session. Provider credentials remain in OpenCode's own profile rather than Hub configuration. This acceptance is not an operating-system sandbox and does not prevent OpenCode from maintaining its own profile/session storage.
 
 This baseline is not full-feature V1. Other real harnesses, physical multi-machine execution, secure phone connectivity, teams, attachments/generated-file return, rich tool progress, and production recovery remain incomplete.
 
@@ -192,7 +192,7 @@ This baseline is not full-feature V1. Other real harnesses, physical multi-machi
 M1 supervision and room completion passed its exit gate on 2026-11-02. M2 is active. AGENT-02, AGENT-04, EXEC-03, EXEC-05, and EXEC-07 now have real OpenCode evidence; the complete M2 exit gate remains open. The milestone includes:
 
 - AGENT-02 and AGENT-04: shared-runtime and real OpenCode acceptance are Done; add other required harnesses independently.
-- EXEC-05: room-bound questions/approvals are Done, including real OpenCode permission evidence.
+- EXEC-05: room-bound questions/approvals are Done, including real OpenCode native question and detailed-permission evidence.
 - EXEC-06: render tool/progress events with accurate execution-node attribution.
 - EXEC-07: real OpenCode execution-location and workspace evidence is Done; physical-node evidence remains under M4.
 - FILE-01 and FILE-02: deliberate attachments and generated-file return with integrity and containment checks.

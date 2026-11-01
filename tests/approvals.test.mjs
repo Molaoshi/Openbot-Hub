@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { AcpClient } from "../server/acp-client.mjs";
+import { Hub } from "../server/hub.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const serverScript = resolve(root, "server/server.mjs");
@@ -122,7 +123,7 @@ async function setup(t, approvalTimeoutMs = 60_000) {
   };
 }
 
-test("questions and approvals resume the same session with persisted terminal decisions", { timeout: 30_000 }, async (t) => {
+test("native form questions and detailed permissions resume with persisted terminal responses", { timeout: 30_000 }, async (t) => {
   const context = await setup(t);
   const { app, directory } = context;
   const question = await post(app, "@Mini Fake question before continuing", "question-allow");
@@ -130,28 +131,59 @@ test("questions and approvals resume the same session with persisted terminal de
   await waitForExecution(app, questionExecutionId, "waiting");
   const pendingQuestion = await waitForApproval(app, questionExecutionId);
   assert.match(pendingQuestion.title, /Choose how/);
-  assert.equal(pendingQuestion.options.length, 2);
-  await requestError(app, `/api/approvals/${pendingQuestion.id}`, jsonOptions("POST", { optionId: "invented" }), 400);
-  const approved = await request(app, `/api/approvals/${pendingQuestion.id}`, jsonOptions("POST", { optionId: "allow_once" }));
-  assert.equal(approved.status, "approved");
-  assert.equal(approved.selectedOptionId, "allow_once");
+  assert.equal(pendingQuestion.kind, "question");
+  assert.equal(pendingQuestion.form.properties.pm.oneOf[1].const, "npm");
+  assert.deepEqual(pendingQuestion.options, []);
+  await requestError(app, `/api/approvals/${pendingQuestion.id}`, jsonOptions("POST", { action: "accept", content: { pm: "invented" } }), 400);
+  const answers = { pm: "npm", pm_custom: "pnpm", count: 3, verbose: true, channels: ["chat", "email"] };
+  const answered = await request(app, `/api/approvals/${pendingQuestion.id}`, jsonOptions("POST", { action: "accept", content: answers }));
+  assert.equal(answered.status, "answered");
+  assert.equal(answered.responseAction, "accept");
+  assert.deepEqual(answered.responseContent, answers);
   const completedQuestion = await waitForExecution(app, questionExecutionId, "completed");
   assert.deepEqual(completedQuestion.history.map((entry) => entry.to), ["queued", "running", "waiting", "running", "completed"]);
-  await requestError(app, `/api/approvals/${pendingQuestion.id}`, jsonOptions("POST", { optionId: "allow_once" }), 409);
+  await requestError(app, `/api/approvals/${pendingQuestion.id}`, jsonOptions("POST", { action: "accept", content: answers }), 409);
 
   const permission = await post(app, "@Mini Fake approval before continuing", "permission-reject");
   const permissionExecutionId = permission.executions[0].id;
   const pendingPermission = await waitForApproval(app, permissionExecutionId);
+  assert.equal(pendingPermission.kind, "permission");
+  assert.deepEqual(pendingPermission.operation.rawInput.command, ["sh", "-c", "printf 'approved\\n' > approval-proof.txt"]);
+  assert.match(pendingPermission.operation.rawInput.cwd, /mini-workspace$/);
+  assert.match(pendingPermission.operation.locations[0].path, /approval-proof\.txt$/);
+  assert.equal(pendingPermission.operation.content[0].oldText, "before\n");
+  assert.equal(pendingPermission.operation.content[0].newText, "after\n");
   const rejected = await request(app, `/api/approvals/${pendingPermission.id}`, jsonOptions("POST", { optionId: "reject_once" }));
   assert.equal(rejected.status, "rejected");
   const completedRejection = await waitForExecution(app, permissionExecutionId, "completed");
   const state = await request(app, "/api/state");
+  const questionReply = state.messages.find((message) => message.id === completedQuestion.resultMessageId);
+  assert.match(questionReply.text, /"pm":"npm"/);
+  assert.match(questionReply.text, /"pm_custom":"pnpm"/);
   const reply = state.messages.find((message) => message.id === completedRejection.resultMessageId);
   assert.match(reply.text, /rejected/);
   const persisted = JSON.parse(await readFile(join(directory, "hub-state.json"), "utf8"));
   assert.equal(persisted.version, 5);
-  assert.deepEqual(persisted.approvals.map((approval) => approval.status), ["approved", "rejected"]);
-  assert.equal(persisted.approvals.every((approval) => approval.resolvedAt && approval.selectedOptionId), true);
+  assert.deepEqual(persisted.approvals.map((approval) => approval.status), ["answered", "rejected"]);
+  assert.equal(persisted.approvals.every((approval) => approval.resolvedAt), true);
+  assert.deepEqual(JSON.parse(await readFile(join(directory, "mini-state", "client-capabilities.json"), "utf8")), { elicitation: { form: {} } });
+});
+
+test("form decline and cancel return their explicit actions to the same native session", { timeout: 30_000 }, async (t) => {
+  const context = await setup(t);
+  for (const action of ["decline", "cancel"]) {
+    const posted = await post(context.app, `@Mini Fake question ${action} this request`, `question-${action}`);
+    const executionId = posted.executions[0].id;
+    const pending = await waitForApproval(context.app, executionId);
+    const decided = await request(context.app, `/api/approvals/${pending.id}`, jsonOptions("POST", { action }));
+    assert.equal(decided.status, action === "decline" ? "declined" : "cancelled");
+    assert.equal(decided.responseAction, action);
+    assert.equal(decided.responseContent, null);
+    const completed = await waitForExecution(context.app, executionId, "completed");
+    const state = await request(context.app, "/api/state");
+    const reply = state.messages.find((message) => message.id === completed.resultMessageId);
+    assert.match(reply.text, new RegExp(`question was ${action}`));
+  }
 });
 
 test("waiting stop, wrong-session rejection, expiry, and restart never leave pending work", { timeout: 30_000 }, async (t) => {
@@ -191,6 +223,70 @@ test("waiting stop, wrong-session rejection, expiry, and restart never leave pen
   assert.match(recovered.error, /not rerun/);
   assert.equal(state.approvals.find((approval) => approval.executionId === restartingId).status, "interrupted");
   assert.equal(state.executions.filter((execution) => execution.originId === restarting.message.id).length, 1);
+});
+
+test("a decision recorded during initial persistence returns the same selection to ACP", { timeout: 10_000 }, async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "openbot-hub-approval-race-"));
+  const hub = new Hub({
+    root: directory,
+    statePath: join(directory, "hub-state.json"),
+    agents: [{
+      id: "mini-fake",
+      name: "Mini Fake",
+      nodeId: "mac-mini",
+      transport: "local-fake",
+      workspace: join(directory, "mini-workspace"),
+      state: join(directory, "mini-state"),
+      centralWorkspace: join(directory, "mini-central"),
+      color: "yellow",
+    }],
+  });
+  await hub.load();
+  const originalSave = hub.save.bind(hub);
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  t.after(async () => {
+    release();
+    hub.save = originalSave;
+    await hub.stop();
+    await rm(directory, { recursive: true, force: true });
+  });
+  const at = new Date().toISOString();
+  hub.state.agents[0].sessionId = "native-session";
+  hub.state.executions.push({
+    id: "race-execution",
+    roomId: "army",
+    originId: "race-origin",
+    agentId: "mini-fake",
+    status: "running",
+    createdAt: at,
+    updatedAt: at,
+    startedAt: at,
+    endedAt: null,
+    attempt: 1,
+    retrySafe: false,
+    error: null,
+    resultMessageId: null,
+    history: [{ from: "queued", to: "running", at }],
+  });
+  hub.save = () => gate;
+  const acpResult = hub.requestApproval({
+    agentId: "mini-fake",
+    executionId: "race-execution",
+    sessionId: "native-session",
+    params: {
+      toolCall: { toolCallId: "race-tool", title: "Run exact command", rawInput: { command: "printf race" } },
+      options: [{ optionId: "allow_once", name: "Allow once", kind: "allow_once" }],
+    },
+  });
+  const pending = hub.state.approvals[0];
+  assert.equal(pending.status, "pending");
+  const apiResponse = hub.respondApproval(pending.id, { optionId: "allow_once" });
+  assert.equal(pending.status, "approved");
+  assert.equal(hub.state.executions[0].status, "running");
+  release();
+  await apiResponse;
+  assert.deepEqual(await acpResult, { outcome: { outcome: "selected", optionId: "allow_once" } });
 });
 
 test("ACP stop kills the process group and rejects the in-flight prompt", { timeout: 15_000 }, async (t) => {

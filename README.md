@@ -62,7 +62,7 @@ Remote-ACP registration references a connector config file; connector tokens rem
 
 ## Real OpenCode acceptance
 
-The separate live acceptance commands use the installed OpenCode CLI and its existing provider authentication. The base gate makes two small real model calls, creates a native file in a disposable workspace, restarts the Hub, verifies native session recall, checks execution identity and workspace-only task artifacts, and removes the disposable directory. The supervision gate makes four small calls and proves native permission approval, active stop and descendant cleanup, provider-crash failure and cleanup, and successful recovery in the same native session.
+The separate live acceptance commands use the installed OpenCode CLI and its existing provider authentication. The base gate makes two small real model calls, creates a native file in a disposable workspace, restarts the Hub, verifies native session recall, checks execution identity and workspace-only task artifacts, and removes the disposable directory. The supervision gate makes five small calls and proves native permission approval with complete operation details, a real OpenCode form question answered through `elicitation/create`, active stop and descendant cleanup, provider-crash failure and cleanup, and successful recovery in the same native session.
 
 ```sh
 npm run test:opencode
@@ -80,10 +80,10 @@ npm run check
 npm test
 npm run test:ui  # macOS + Google Chrome
 npm run test:opencode  # real provider calls; separate live gate
-npm run test:opencode-supervision  # four-call real supervision gate
+npm run test:opencode-supervision  # five-call real supervision gate
 ```
 
-The offline tests cover remote ACP execution, workspace proof, session resume, credential rejection, connectivity health, OpenCode registration validation, concurrent idempotency, per-agent queue order, queued/active stop, process-group cleanup, known-safe retry, unknown-outcome recovery, room lifecycle safeguards, and persistence across restart. Approval coverage includes questions, permission allow/reject, wrong-session rejection, invalid and repeated decisions, expiry, waiting stop, active-modification guards, and restart recovery. Hardening regressions also cover nonexistent executables, foreign Origin/Host requests, non-JSON mutations, malformed-state preservation, unique workspaces, and provider-stderr redaction. GitHub Actions runs syntax and offline tests for every PR and push to `main`; browser and live provider acceptance remain local gates.
+The offline suite contains 18 tests covering remote ACP execution, workspace proof, session resume, credential rejection, connectivity health, OpenCode registration validation, concurrent idempotency, per-agent queue order, queued/active stop, process-group cleanup, known-safe retry, unknown-outcome recovery, room lifecycle safeguards, and persistence across restart. Approval coverage includes native `elicitation/create` questions with structured accept/decline/cancel outcomes, complete/redacted permission operation details, wrong-session rejection, invalid and repeated decisions, expiry, waiting stop, active-modification guards, restart recovery, and the persistence-decision race. Hardening regressions also cover nonexistent executables, foreign Origin/Host requests, non-JSON mutations, malformed-state preservation, unique workspaces, and provider-stderr redaction. GitHub Actions runs syntax and offline tests for every PR and push to `main`; browser and live provider acceptance remain local gates.
 
 ## Product plan
 
@@ -92,7 +92,7 @@ The offline tests cover remote ACP execution, workspace proof, session resume, c
 - [Requirements matrix](docs/requirements-matrix.md) — status and acceptance evidence for every requirement.
 - [Testing instructions](docs/TESTING.md) — manual checks and current limitations.
 
-**M1 is complete. M2 is active:** the real OpenCode adapter, native file/session acceptance, real-agent stop/failure supervision, and room-bound approvals have landed; rich progress, attachments, generated-file return, and the remaining M2 exit gate are still open. Feature changes must reference requirement IDs and update the matrix.
+**M1 is complete. M2 is active:** the real OpenCode adapter, native file/session acceptance, real-agent stop/failure supervision, and room-bound native questions and detailed approvals have landed; rich progress, attachments, generated-file return, and the remaining M2 exit gate are still open. Feature changes must reference requirement IDs and update the matrix.
 
 ## Source layout
 

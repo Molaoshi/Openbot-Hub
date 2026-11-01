@@ -58,7 +58,10 @@ export class AcpClient {
         if (this.child === child) this.child = null;
         this.startPromise = null;
       });
-      await this.request("initialize", { protocolVersion: 1, clientCapabilities: {} });
+      await this.request("initialize", {
+        protocolVersion: 1,
+        clientCapabilities: { elicitation: { form: {} } },
+      });
     })();
     try {
       await this.startPromise;
@@ -75,14 +78,14 @@ export class AcpClient {
 
   async #handleRequest(message) {
     try {
-      if (message.method !== "session/request_permission" || !this.onRequest) {
+      if (!["session/request_permission", "elicitation/create"].includes(message.method) || !this.onRequest) {
         this.#respond(message.id, { error: { code: -32601, message: `Unsupported client method: ${message.method}` } });
         return;
       }
-      const result = await this.onRequest(message.params);
+      const result = await this.onRequest(message.params, { method: message.method });
       this.#respond(message.id, { result });
     } catch (error) {
-      this.#respond(message.id, { error: { code: -32000, message: redactError(error.message) } });
+      this.#respond(message.id, { error: { code: error.status === 400 ? -32602 : -32000, message: redactError(error.message) } });
     }
   }
 

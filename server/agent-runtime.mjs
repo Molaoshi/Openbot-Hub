@@ -53,16 +53,16 @@ export class AgentRuntime {
         },
       });
     }
-    client.onRequest = (params) => this.handleRequest(agent.id, params);
+    client.onRequest = (params, context) => this.handleRequest(agent.id, params, context);
     this.clients.set(agent.id, client);
     return client;
   }
 
-  async handleRequest(agentId, params) {
+  async handleRequest(agentId, params, { method }) {
     const active = this.active.get(agentId);
-    if (!active || active.sessionId !== params.sessionId) throw new Error("Permission request does not match the active execution session.");
-    if (!this.onRequest) throw new Error("This Hub does not accept permission requests.");
-    return this.onRequest({ agentId, executionId: active.executionId, sessionId: active.sessionId, params });
+    if (!active || active.sessionId !== params.sessionId) throw new Error("Agent interaction does not match the active execution session.");
+    if (!this.onRequest) throw new Error("This Hub does not accept agent interactions.");
+    return this.onRequest({ agentId, executionId: active.executionId, sessionId: active.sessionId, method, params });
   }
 
   run(agentId, sessionId, text, { executionId, onStart = async () => {} } = {}) {

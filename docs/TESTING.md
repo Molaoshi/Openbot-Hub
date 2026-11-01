@@ -14,10 +14,11 @@ The repository contains a runnable, account-free application with:
 - Idempotent client message posting.
 - Persistent per-recipient execution records with lifecycle history and result links.
 - Execution cards with queued/active/waiting stop and known-safe retry controls.
-- In-room question and permission choices with persistent pending/terminal approval records and same-session resume.
+- In-room native form questions and permission choices with persistent pending/terminal approval records and same-session resume.
+- Full command, raw-input, path/location, content, and diff details rendered safely as text before permission decisions.
 - Connectivity checks with available, unavailable, misconfigured, disabled, and untested health.
 - Room rename, purpose/membership editing, and confirmed deletion in the UI and API.
-- Deterministic slow, fail-once, question, approval, and wrong-session fake work for supervision acceptance.
+- Deterministic slow, fail-once, native question, detailed approval, and wrong-session fake work for supervision acceptance.
 - Offline connector/application integration tests and separate live OpenCode file/session and supervision acceptance scripts.
 
 The offline demo and test suite require no upstream OpenBot installation, email address, vendor account, API key, model provider, or paid API call. The optional real OpenCode tests use the CLI's existing provider authentication and make small model calls; they do not use an OpenBot account or copy provider credentials into the Hub.
@@ -30,10 +31,10 @@ npm run check
 npm test
 npm run test:ui  # requires macOS and Google Chrome
 npm run test:opencode  # live file/session gate; two small model calls
-npm run test:opencode-supervision  # live approval/stop/failure gate; four model calls
+npm run test:opencode-supervision  # live question/approval/stop/failure gate; five model calls
 ```
 
-The browser command starts an isolated temporary server on a random port, uses separate runtime state, exercises real desktop and phone-width interactions including approval and rejection, writes screenshots and a report under `artifacts/ui-validation/`, and stops its temporary processes. It does not replace the persistent service or modify its state. GitHub Actions runs `npm run check` and `npm test` for every pull request and push to `main`; browser and live provider tests remain local acceptance gates.
+The browser command starts an isolated temporary server on a random port, uses separate runtime state, exercises real desktop and phone-width interactions including visible permission details and native question accept/decline flows, writes screenshots and a report under `artifacts/ui-validation/`, and stops its temporary processes. It does not replace the persistent service or modify its state. GitHub Actions runs `npm run check` and `npm test` for every pull request and push to `main`; browser and live provider tests remain local acceptance gates.
 
 The integration tests verify:
 
@@ -57,7 +58,9 @@ The integration tests verify:
 - Queued and active fake stop with no stopped reply, resource cleanup, and successful subsequent work.
 - ACP process-group cleanup and rejection of the in-flight prompt when active work stops.
 - One known-safe fail-once retry with attempt linkage; interrupted and unknown outcomes cannot be retried.
-- Question allow and permission reject round trips through `waiting → running`, with persisted terminal decisions and no repeated decisions.
+- Native `elicitation/create` form questions and permission decisions round-trip through `waiting → running`, with structured accept, decline, and cancel outcomes and no repeated decisions.
+- Complete permission command, raw-input, path/location, content, and diff preservation with redaction and safe-text rendering.
+- The exact persistence race where an approved decision previously could be returned to ACP as cancelled.
 - Waiting stop, wrong-session rejection, approval expiry, active-agent modification guards, and safe restart recovery without pending work or automatic reruns.
 - Non-global room deletion blocked while its execution is active.
 - Unfinished executions recovered as `unknown` after restart without automatic reruns or extra messages; pending approvals become `interrupted`.
@@ -84,14 +87,15 @@ Run `npm run test:opencode`. This makes two small model calls and verifies:
 
 The JSON report is written to `artifacts/opencode-acceptance/report.json`.
 
-### Approvals, stop, failure, and recovery
+### Questions, approvals, stop, failure, and recovery
 
-Run `npm run test:opencode-supervision`. This makes four small model calls against a disposable OpenCode workspace whose bash permission is `ask`, and verifies:
+Run `npm run test:opencode-supervision`. This makes five small model calls against a disposable OpenCode workspace whose bash permission is `ask`, and verifies:
 
-1. A native OpenCode permission request becomes one room-bound pending approval; allow-once resumes the same execution through `queued → running → waiting → running → completed` and produces the requested file.
-2. Stopping active real work marks it `interrupted` and cleans up the tool descendant process.
-3. An induced provider-process crash marks active work `failed`, not retry-safe, and cleans up its tool descendant process.
-4. A subsequent execution completes and recalls the original token through the same durable native OpenCode session.
+1. A native OpenCode permission request becomes one room-bound pending approval; allow-once resumes the same execution through `queued → running → waiting → running → completed`, preserves the real command details, and produces the requested file.
+2. A genuine OpenCode `elicitation/create` form question becomes a native room question and resumes with the structured answer `npm`.
+3. Stopping active real work marks it `interrupted` and cleans up the tool descendant process.
+4. An induced provider-process crash marks active work `failed`, not retry-safe, and cleans up its tool descendant process.
+5. A subsequent execution completes and recalls the original token through the same durable native OpenCode session.
 
 The JSON report is written to `artifacts/opencode-supervision/report.json`.
 
@@ -134,8 +138,8 @@ The launcher creates demo-only state under `runtime/`, generates a local connect
 3. Stop the active slow turn, confirm it becomes **INTERRUPTED**, then send a normal prompt and confirm the agent still executes.
 4. Send `@Mini Fake fail-once safe retry`. The first attempt should fail before execution and offer **Safe retry**.
 5. Select **Safe retry** and confirm a linked attempt 2 completes. The old retry button should disappear; interrupted or unknown records never offer retry.
-6. Send `@Mini Fake question before continuing`. Confirm the execution becomes **WAITING** and its choices appear in the room; allow it and confirm it resumes and completes with the terminal decision visible.
-7. Send `@Mini Fake approval before continuing`, reject the request, and confirm the same execution resumes and the reply records the rejection.
+6. Send `@Mini Fake question before continuing`. Confirm the execution becomes **WAITING** and a native form appears. Change the package manager to `npm`, submit the structured answer, and confirm it resumes and completes with the terminal answer visible. Repeat with **Decline** and **Cancel** and confirm those outcomes are explicit.
+7. Send `@Mini Fake approval before continuing`. Before deciding, confirm the full command, raw input, path/location, content, and diff appear as readable text. Reject the request and confirm the same execution resumes and the reply records the rejection.
 8. Send another approval prompt and stop it while waiting. Confirm the execution becomes **INTERRUPTED**, the approval can no longer be decided, and a later normal prompt succeeds.
 
 ### Rooms and phone
@@ -148,7 +152,7 @@ The launcher creates demo-only state under `runtime/`, generates a local connect
 6. Switch between Army and a project room and confirm their transcripts remain separate.
 7. At a narrow viewport, open and close the room and agent drawers.
 8. Open the agent form at phone width and confirm its fields and actions fit the viewport.
-9. At phone width, allow one question and reject another approval; confirm the choices and resulting execution states remain usable without horizontal overflow.
+9. At phone width, submit one native question and reject another approval; confirm the full operation details, structured choices, and resulting execution states remain usable without horizontal overflow.
 
 Fake execution evidence is written beneath the agent's configured workspace. Initial demo paths include:
 

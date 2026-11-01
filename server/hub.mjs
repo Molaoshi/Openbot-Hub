@@ -2,6 +2,7 @@ import { copyFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { AgentRuntime } from "./agent-runtime.mjs";
+import { normalizeForm, protocolValue, validateFormContent } from "./elicitation.mjs";
 import { redactError } from "./redact.mjs";
 
 const MAX_TURNS_PER_REQUEST = 6;
@@ -475,13 +476,14 @@ export class Hub {
     execution.history.push({ from: previous, to: status, at, ...(error ? { error } : {}) });
   }
 
-  settleApproval(approval, result = { outcome: { outcome: "cancelled" } }) {
+  settleApproval(approval, result = null) {
     const timer = this.approvalTimers.get(approval.id);
     if (timer) clearTimeout(timer);
     this.approvalTimers.delete(approval.id);
     const pending = this.pendingApprovals.get(approval.id);
     this.pendingApprovals.delete(approval.id);
-    pending?.resolve(result);
+    const cancelled = approval.kind === "question" ? { action: "cancel" } : { outcome: { outcome: "cancelled" } };
+    pending?.resolve(result ?? cancelled);
   }
 
   interruptExecutionApprovals(executionId, error) {
@@ -492,28 +494,34 @@ export class Hub {
     }
   }
 
-  async requestApproval({ agentId, executionId, sessionId, params }) {
+  async requestApproval({ agentId, executionId, sessionId, method = "session/request_permission", params }) {
     const execution = this.execution(executionId);
     const currentSession = this.state.agents.find((candidate) => candidate.id === agentId)?.sessionId;
     if (execution.status !== "running" || currentSession !== sessionId || this.state.approvals.some((candidate) => candidate.executionId === executionId && candidate.status === "pending")) {
-      throw problem("Permission request does not match the active execution.", 409);
+      throw problem("Agent interaction does not match the active execution.", 409);
     }
-    const options = Array.isArray(params.options) ? params.options.slice(0, 8).map((option) => ({
+    const question = method === "elicitation/create";
+    if (!question && method !== "session/request_permission") throw problem("Unsupported agent interaction.", 400);
+    const form = question ? normalizeForm(params) : null;
+    const options = question ? [] : (Array.isArray(params.options) ? params.options.slice(0, 8).map((option) => ({
       id: clean(option.optionId).slice(0, 120),
       label: redactError(clean(option.name)).slice(0, 160),
       kind: clean(option.kind, "allow_once").slice(0, 40),
-    })) : [];
-    if (!options.length || options.some((option) => !option.id || !option.label) || new Set(options.map((option) => option.id)).size !== options.length) {
+    })) : []);
+    if (!question && (!options.length || options.some((option) => !option.id || !option.label) || new Set(options.map((option) => option.id)).size !== options.length)) {
       throw problem("Permission request has invalid options.", 400);
     }
     const at = new Date().toISOString();
     const approval = {
       id: randomUUID(),
+      kind: question ? "question" : "permission",
       executionId,
       roomId: execution.roomId,
       agentId,
       sessionId,
-      title: redactError(clean(params.toolCall?.title, "Agent requests a decision")).slice(0, 240),
+      title: redactError(clean(question ? params.message : params.toolCall?.title, question ? "Agent requests information" : "Agent requests a decision")).slice(0, 240),
+      operation: question ? null : protocolValue(params.toolCall ?? {}),
+      form,
       options,
       status: "pending",
       createdAt: at,
@@ -521,41 +529,59 @@ export class Hub {
       expiresAt: new Date(Date.now() + this.approvalTimeoutMs).toISOString(),
       resolvedAt: null,
       selectedOptionId: null,
+      responseAction: null,
+      responseContent: null,
       error: null,
     };
     this.state.approvals.push(approval);
     this.transitionExecution(execution, "waiting");
+    const pending = new Promise((resolve) => this.pendingApprovals.set(approval.id, { resolve }));
+    const timer = setTimeout(() => { void this.expireApproval(approval.id); }, this.approvalTimeoutMs);
+    timer.unref();
+    this.approvalTimers.set(approval.id, timer);
     await this.save();
     this.emit("change");
-    if (approval.status !== "pending" || execution.status !== "waiting") return { outcome: { outcome: "cancelled" } };
-    return new Promise((resolve) => {
-      this.pendingApprovals.set(approval.id, { resolve });
-      const timer = setTimeout(() => { void this.expireApproval(approval.id); }, this.approvalTimeoutMs);
-      timer.unref();
-      this.approvalTimers.set(approval.id, timer);
-    });
+    return pending;
   }
 
-  async respondApproval(approvalId, optionId) {
+  async respondApproval(approvalId, input) {
     const approval = this.state.approvals.find((candidate) => candidate.id === approvalId);
     if (!approval) throw problem("Approval not found.", 404);
     if (approval.status !== "pending") throw problem("This decision is already terminal.", 409);
     const execution = this.execution(approval.executionId);
     const currentSession = this.state.agents.find((candidate) => candidate.id === approval.agentId)?.sessionId;
     if (execution.status !== "waiting" || currentSession !== approval.sessionId) throw problem("The decision no longer matches the active execution session.", 409);
-    const option = approval.options.find((candidate) => candidate.id === clean(optionId));
-    if (!option) throw problem("Choose one of the offered options.", 400);
     const at = new Date().toISOString();
-    Object.assign(approval, {
-      status: /reject|deny/i.test(option.kind) ? "rejected" : "approved",
-      selectedOptionId: option.id,
-      updatedAt: at,
-      resolvedAt: at,
-      error: null,
-    });
+    let result;
+    if (approval.kind === "question") {
+      const action = clean(input?.action);
+      if (!["accept", "decline", "cancel"].includes(action)) throw problem("Choose accept, decline, or cancel.", 400);
+      const content = action === "accept" ? validateFormContent(approval.form, input.content) : null;
+      Object.assign(approval, {
+        status: action === "accept" ? "answered" : action === "decline" ? "declined" : "cancelled",
+        responseAction: action,
+        responseContent: content,
+        updatedAt: at,
+        resolvedAt: at,
+        error: null,
+      });
+      result = { action, ...(content ? { content } : {}) };
+    } else {
+      const optionId = typeof input === "string" ? input : input?.optionId;
+      const option = approval.options.find((candidate) => candidate.id === clean(optionId));
+      if (!option) throw problem("Choose one of the offered options.", 400);
+      Object.assign(approval, {
+        status: /reject|deny/i.test(option.kind) ? "rejected" : "approved",
+        selectedOptionId: option.id,
+        updatedAt: at,
+        resolvedAt: at,
+        error: null,
+      });
+      result = { outcome: { outcome: "selected", optionId: option.id } };
+    }
     this.transitionExecution(execution, "running");
     await this.save();
-    this.settleApproval(approval, { outcome: { outcome: "selected", optionId: option.id } });
+    this.settleApproval(approval, result);
     this.emit("change");
     return approval;
   }

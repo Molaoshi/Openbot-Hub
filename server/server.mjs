@@ -98,7 +98,7 @@ const server = http.createServer(async (request, response) => {
     const approvalMatch = url.pathname.match(/^\/api\/approvals\/([^/]+)$/);
     if (approvalMatch && request.method === "POST") {
       const input = await body(request);
-      return json(response, 200, await hub.respondApproval(decodeURIComponent(approvalMatch[1]), input.optionId));
+      return json(response, 200, await hub.respondApproval(decodeURIComponent(approvalMatch[1]), input));
     }
     const agentMatch = url.pathname.match(/^\/api\/agents\/([^/]+)$/);
     if (agentMatch && request.method === "PATCH") {

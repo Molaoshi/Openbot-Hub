@@ -138,13 +138,49 @@ async function post(text, clientMessageId) {
   return posted.executions[0].id;
 }
 
-async function approve(executionId) {
+async function approve(executionId, expectedOperation) {
   const approval = await waitForApproval(executionId);
+  assert.equal(approval.kind, "permission");
+  const operation = JSON.stringify(approval.operation);
+  for (const expected of expectedOperation) assert.ok(operation.includes(expected), `Permission details omit ${expected}: ${operation}`);
   const option = approval.options.find((candidate) => /allow_once/.test(candidate.kind));
   assert.ok(option, `No allow-once option in ${JSON.stringify(approval.options)}`);
   const decided = await request(`/api/approvals/${approval.id}`, jsonOptions("POST", { optionId: option.id }));
   assert.equal(decided.status, "approved");
   assert.equal(decided.executionId, executionId);
+  return decided;
+}
+
+function formAnswer(schema, required) {
+  if (schema.type === "string") {
+    const choices = schema.enum ?? schema.oneOf?.map((choice) => choice.const);
+    if (choices) return choices.find((choice) => /npm/i.test(choice)) ?? choices[0];
+    return "npm";
+  }
+  if (schema.type === "number" || schema.type === "integer") return schema.default ?? schema.minimum ?? 1;
+  if (schema.type === "boolean") return schema.default ?? false;
+  if (schema.type === "array") {
+    const choices = schema.items.enum ?? schema.items.anyOf?.map((choice) => choice.const);
+    const selected = choices.find((choice) => /npm/i.test(choice)) ?? choices[0];
+    return Array.from({ length: Math.max(1, schema.minItems ?? 0) }, () => selected);
+  }
+  throw new Error(`Unsupported live question type ${schema.type} (required: ${required})`);
+}
+
+async function answerQuestion(executionId) {
+  const approval = await waitForApproval(executionId);
+  assert.equal(approval.kind, "question");
+  const content = {};
+  for (const [key, schema] of Object.entries(approval.form.properties)) {
+    const required = approval.form.required.includes(key);
+    if (!required && key.endsWith("_custom")) continue;
+    if (!required && schema.default === undefined && !["string", "array"].includes(schema.type)) continue;
+    content[key] = formAnswer(schema, required);
+  }
+  const decided = await request(`/api/approvals/${approval.id}`, jsonOptions("POST", { action: "accept", content }));
+  assert.equal(decided.status, "answered");
+  assert.equal(decided.responseAction, "accept");
+  assert.match(JSON.stringify(decided.responseContent), /npm/i);
   return decided;
 }
 
@@ -187,7 +223,7 @@ try {
     `@OpenCode Real Use the bash tool exactly once, not any other tool, to run: printf '%s\\n' '${marker}' > approved.txt\nThen reply with exactly REAL_APPROVAL_DONE and nothing else.`,
     "opencode-real-approval",
   );
-  await approve(approvalId);
+  await approve(approvalId, [marker, "approved.txt"]);
   const approved = await waitForExecution(approvalId, "completed");
   assert.deepEqual(approved.execution.history.map((entry) => entry.to), ["queued", "running", "waiting", "running", "completed"]);
   assert.equal(await readFile(join(workspace, "approved.txt"), "utf8"), `${marker}\n`);
@@ -198,11 +234,21 @@ try {
   assert.ok(sessionId);
   assert.equal(persistedApproval.approvals.find((approval) => approval.executionId === approvalId).sessionId, sessionId);
 
+  const questionId = await post(
+    "@OpenCode Real Use the question tool exactly once to ask which package manager to use, offering Bun and npm. Do not ask any other question. After I answer npm, reply with exactly REAL_QUESTION_NPM and nothing else. Do not use any other tool.",
+    "opencode-real-question",
+  );
+  await answerQuestion(questionId);
+  const questioned = await waitForExecution(questionId, "completed");
+  assert.deepEqual(questioned.execution.history.map((entry) => entry.to), ["queued", "running", "waiting", "running", "completed"]);
+  const questionReply = questioned.snapshot.messages.find((message) => message.id === questioned.execution.resultMessageId);
+  assert.equal(questionReply.text.trim(), "REAL_QUESTION_NPM");
+
   const stopId = await post(
     "@OpenCode Real Use the bash tool exactly once, not any other tool, to run exactly: sh -c 'echo $$ > stop-child.pid; exec sleep 60'\nDo not run any other command.",
     "opencode-real-stop",
   );
-  await approve(stopId);
+  await approve(stopId, ["stop-child.pid", "sleep 60"]);
   const stoppedChildPid = await waitForPid(join(workspace, "stop-child.pid"));
   const stopped = await request(`/api/executions/${stopId}/stop`, { method: "POST" });
   assert.equal(stopped.status, "interrupted");
@@ -213,7 +259,7 @@ try {
     "@OpenCode Real Use the bash tool exactly once, not any other tool, to run exactly: sh -c 'echo $$ > failure-child.pid; exec sleep 60'\nDo not run any other command.",
     "opencode-real-crash",
   );
-  await approve(failureId);
+  await approve(failureId, ["failure-child.pid", "sleep 60"]);
   const failedChildPid = await waitForPid(join(workspace, "failure-child.pid"));
   const currentProviderPid = Number(await readFile(providerPidPath, "utf8"));
   assert.ok(currentProviderPid > 0);
@@ -237,9 +283,12 @@ try {
     ok: true,
     requirements: ["EXEC-03", "EXEC-05"],
     adapter: "local-opencode",
-    realModelCalls: 4,
+    realModelCalls: 5,
     realPermissionRoundTrip: true,
+    permissionOperationDetails: true,
+    realQuestionRoundTrip: true,
     approvalStates: approved.execution.history.map((entry) => entry.to),
+    questionStates: questioned.execution.history.map((entry) => entry.to),
     activeStop: stopped.status,
     stoppedDescendantCleanup: true,
     providerFailureState: failed.execution.status,

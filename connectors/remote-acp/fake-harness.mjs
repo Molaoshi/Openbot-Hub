@@ -27,10 +27,11 @@ const say = (sessionId, text) => update(sessionId, {
 });
 const decisions = new Map();
 let nextDecisionId = 1;
+let clientCapabilities = {};
 
 function requestDecision(sessionId, text) {
   const id = `decision-${nextDecisionId++}`;
-  const question = text.includes("question");
+  const proofPath = join(workspace, "approval-proof.txt");
   const promise = new Promise((resolve, reject) => decisions.set(id, { resolve, reject }));
   write({
     id,
@@ -39,14 +40,62 @@ function requestDecision(sessionId, text) {
       sessionId: text.includes("wrong-session") ? "wrong-native-session" : sessionId,
       toolCall: {
         toolCallId: id,
-        title: question ? "Choose how this task should continue" : "Approve the requested workspace operation",
-        kind: question ? "think" : "execute",
+        title: "Approve the requested workspace operation",
+        kind: "execute",
         status: "pending",
+        rawInput: {
+          command: ["sh", "-c", "printf 'approved\\n' > approval-proof.txt"],
+          cwd: workspace,
+          path: proofPath,
+        },
+        locations: [{ path: proofPath, line: 1 }],
+        content: [{ type: "diff", path: proofPath, oldText: "before\n", newText: "after\n" }],
       },
       options: [
-        { optionId: "allow_once", name: question ? "Proceed with the proposed step" : "Allow once", kind: "allow_once" },
-        { optionId: "reject_once", name: question ? "Stop at this step" : "Reject once", kind: "reject_once" },
+        { optionId: "allow_once", name: "Allow once", kind: "allow_once" },
+        { optionId: "reject_once", name: "Reject once", kind: "reject_once" },
       ],
+    },
+  });
+  return promise;
+}
+
+function requestQuestion(sessionId, text) {
+  const id = `decision-${nextDecisionId++}`;
+  if (!clientCapabilities.elicitation?.form) return Promise.reject(new Error("The client did not advertise elicitation.form."));
+  const promise = new Promise((resolve, reject) => decisions.set(id, { resolve, reject }));
+  write({
+    id,
+    method: "elicitation/create",
+    params: {
+      sessionId: text.includes("wrong-session") ? "wrong-native-session" : sessionId,
+      toolCallId: id,
+      mode: "form",
+      message: "Choose how this task should continue",
+      requestedSchema: {
+        type: "object",
+        title: "Execution choices",
+        description: "Review and modify the structured answer before sending it.",
+        properties: {
+          pm: {
+            type: "string",
+            title: "Package manager",
+            oneOf: [{ const: "bun", title: "Bun" }, { const: "npm", title: "npm" }],
+            default: "bun",
+          },
+          pm_custom: { type: "string", title: "Custom package manager", maxLength: 40 },
+          count: { type: "integer", title: "Retry count", minimum: 1, maximum: 5, default: 1 },
+          verbose: { type: "boolean", title: "Verbose output", default: false },
+          channels: {
+            type: "array",
+            title: "Result channels",
+            items: { type: "string", anyOf: [{ const: "chat", title: "Chat" }, { const: "email", title: "Email" }] },
+            maxItems: 2,
+            default: ["chat"],
+          },
+        },
+        required: ["pm"],
+      },
     },
   });
   return promise;
@@ -74,6 +123,8 @@ function record(session, sessionUpdate, text) {
 
 const handlers = {
   initialize(request) {
+    clientCapabilities = request.params.clientCapabilities ?? {};
+    writeFileSync(join(stateRoot, "client-capabilities.json"), `${JSON.stringify(clientCapabilities, null, 2)}\n`, { mode: 0o600 });
     reply(request, {
       protocolVersion: 1,
       agentInfo: { name: "openbot-hub-fake", title, version: "0.1.0" },
@@ -136,13 +187,19 @@ const handlers = {
       `Received: ${text || "(empty prompt)"}`,
       "This is a deterministic offline response; no model or paid API call was made.",
     ].join("\n");
-    const finish = (accepted = true) => {
-      const finalAnswer = accepted ? answer : "The proposed step was rejected; no further action was taken.";
+    const finish = (accepted = true, detail = "") => {
+      const finalAnswer = accepted ? `${answer}${detail ? `\n${detail}` : ""}` : detail || "The proposed step was rejected; no further action was taken.";
       say(session.id, finalAnswer);
       record(session, "agent_message_chunk", finalAnswer);
       reply(request, { stopReason: accepted ? "end_turn" : "refusal" });
     };
-    if (/\b(approval|question)\b/.test(text)) {
+    if (/\bquestion\b/.test(text)) {
+      requestQuestion(session.id, text)
+        .then((result) => finish(result.action === "accept", result.action === "accept" ? `Question answers: ${JSON.stringify(result.content)}` : `The question was ${result.action}; no further action was taken.`))
+        .catch((error) => fail(request, -32000, error.message));
+      return;
+    }
+    if (/\bapproval\b/.test(text)) {
       requestDecision(session.id, text)
         .then((result) => finish(result.outcome?.outcome === "selected" && result.outcome.optionId === "allow_once"))
         .catch((error) => fail(request, -32000, error.message));
