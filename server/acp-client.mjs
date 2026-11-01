@@ -1,11 +1,12 @@
 import { spawn } from "node:child_process";
 
 export class AcpClient {
-  constructor({ command, args, env = {}, cwd }) {
+  constructor({ command, args, env = {}, cwd, requestTimeoutMs = 120_000 }) {
     this.command = command;
     this.args = args;
     this.env = env;
     this.cwd = cwd;
+    this.requestTimeoutMs = requestTimeoutMs;
     this.child = null;
     this.pending = new Map();
     this.notifications = [];
@@ -47,7 +48,13 @@ export class AcpClient {
       this.buffer = this.buffer.slice(index + 1);
       if (!line.trim()) continue;
       const message = JSON.parse(line);
-      if (message.id !== undefined) {
+      if (message.id !== undefined && message.method) {
+        this.child?.stdin.write(`${JSON.stringify({
+          jsonrpc: "2.0",
+          id: message.id,
+          error: { code: -32601, message: `Unsupported client method: ${message.method}` },
+        })}\n`);
+      } else if (message.id !== undefined) {
         const pending = this.pending.get(message.id);
         if (!pending) continue;
         this.pending.delete(message.id);
@@ -70,7 +77,7 @@ export class AcpClient {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         reject(new Error(`${method} timed out: ${this.stderr}`));
-      }, 20_000);
+      }, this.requestTimeoutMs);
       this.pending.set(id, { resolve, reject, timer });
     });
     this.child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);

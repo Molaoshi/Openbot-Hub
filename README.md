@@ -47,16 +47,29 @@ Service logs are written to `runtime/openbot-hub.out.log` and `runtime/openbot-h
 
 ## Manage agents, rooms, and execution
 
-- Select **+ ADD** in the execution directory to register a local-fake or remote-ACP agent.
+- Select **+ ADD** in the execution directory to register a local-fake, OpenCode, or remote-ACP agent.
+- For **OpenCode · real ACP**, provide the full `opencode-cli` path and a disposable workspace. The Hub launches `opencode-cli acp`; it does not install upstream OpenBot or ask for an OpenBot account.
 - Use **TEST** to check connectivity and expose available, unavailable, misconfigured, disabled, or untested health.
-- Use an agent's pencil control to edit its identity, connection, workspace, color, or enabled state.
+- Use an agent's pencil control to edit its identity, connection, workspace, color, or enabled state. Execution changes invalidate the saved session reference.
 - Disabled agents cannot execute. Removing an agent preserves its message history.
 - Select **+ NEW** in the room panel to create a project room and choose its members.
 - Use the header pencil to rename a project room, edit its purpose or membership, or delete its history with confirmation. Army permits purpose edits only.
 - Execution cards show applicable queued, running, completed, failed, interrupted, and unknown states. Stop queued/active work or retry only known-safe pre-execution failures.
 - The Army room always includes every enabled agent. In project rooms, `@everyone` includes only enabled members.
 
-Remote-ACP registration references a connector config file; connector tokens remain in separate owner-only files and are never entered into the agent registry.
+Remote-ACP registration references a connector config file; connector tokens remain in separate owner-only files. OpenCode uses its own existing provider profile. Neither connector credentials nor provider credentials are entered into the agent registry, prompts, message history, or Git.
+
+## Real OpenCode acceptance
+
+The separate live acceptance command uses the installed OpenCode CLI and its existing provider authentication. It makes two small real model calls, starts an isolated Hub on a random port, creates a native file in a disposable workspace, restarts the Hub, verifies native session recall, checks execution identity and workspace-only task artifacts, and removes the disposable directory.
+
+```sh
+npm run test:opencode
+# Override the CLI location when needed:
+OPENCODE_CLI=/full/path/to/opencode-cli npm run test:opencode
+```
+
+On this Mac, the default CLI is `~/Library/Application Support/ai.opencode.desktop/cli/2.0.26/opencode-cli`. The live test is intentionally separate from offline `npm test`; its report is written to `artifacts/opencode-acceptance/report.json`.
 
 ## Verify
 
@@ -64,9 +77,10 @@ Remote-ACP registration references a connector config file; connector tokens rem
 npm run check
 npm test
 npm run test:ui  # macOS + Google Chrome
+npm run test:opencode  # real provider calls; separate live gate
 ```
 
-The offline tests cover remote ACP execution, workspace proof, session resume, credential rejection, connectivity health, concurrent idempotency, per-agent queue order, queued/active stop, known-safe retry, unknown-outcome recovery, room lifecycle safeguards, and persistence across restart. The UI command runs isolated desktop and 390 px phone acceptance flows, including connectivity, supervision, and room editing/deletion controls.
+The offline tests cover remote ACP execution, workspace proof, session resume, credential rejection, connectivity health, OpenCode registration validation, concurrent idempotency, per-agent queue order, queued/active stop, known-safe retry, unknown-outcome recovery, room lifecycle safeguards, and persistence across restart. The UI command runs isolated desktop and 390 px phone acceptance flows, including OpenCode form behavior, connectivity, supervision, and room editing/deletion controls.
 
 ## Product plan
 
@@ -75,7 +89,7 @@ The offline tests cover remote ACP execution, workspace proof, session resume, c
 - [Requirements matrix](docs/requirements-matrix.md) — status and acceptance evidence for every requirement.
 - [Testing instructions](docs/TESTING.md) — manual checks and current limitations.
 
-**M1: supervision and room completion is complete.** M2: real work and files is the next milestone and has not started. Feature changes must reference requirement IDs and update the matrix.
+**M1 is complete. M2 is active:** the real OpenCode adapter and native file/session acceptance have landed; approvals, rich progress, attachments, generated-file return, and the remaining M2 exit gate are still open. Feature changes must reference requirement IDs and update the matrix.
 
 ## Source layout
 
@@ -84,7 +98,7 @@ server/                  Account-free Hub, registry, rooms, web server, SSE, run
 web/                     Responsive multi-room chat and management interface
 connectors/remote-acp/   Authenticated remote execution connector and fake harness
 config/                  Demo-only, non-secret agent and node configuration
-scripts/                 Development launcher
+scripts/                 Development launcher and real OpenCode acceptance
 tests/                   Offline protocol and application integration tests
 docs/                    Architecture and acceptance plans
 ```
@@ -93,7 +107,8 @@ docs/                    Architecture and acceptance plans
 
 - Army Hub is a separate repository and is not modified by this project.
 - The server listens on loopback by default. Do not expose it to a network without adding access control.
-- Real DSH, OpenCode, Hermes, and Grok adapters are not implemented yet.
+- OpenCode is the first real adapter. DSH, Hermes, and Grok adapters are not implemented yet.
+- The disposable acceptance checks task artifacts within its isolated test root; it is not an operating-system sandbox and does not restrict OpenCode's own session/profile storage.
 - Physical Dell/MacBook enrollment and secure phone access remain deployment work.
 - Upstream OpenBot code is not bundled in the runnable app. Any future copied or modified upstream code must retain its PolyForm Noncommercial 1.0.0 notices.
 

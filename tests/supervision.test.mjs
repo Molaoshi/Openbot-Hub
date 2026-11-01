@@ -214,3 +214,28 @@ test("queue ordering, concurrent deduplication, stop, safe retry, and active-roo
   const deletion = await request(app, `/api/rooms/${room.id}?confirm=delete-history`, { method: "DELETE" });
   assert.equal(deletion.deletedExecutions, 1);
 });
+
+test("OpenCode registration requires only non-secret CLI and workspace configuration", { timeout: 30_000 }, async (t) => {
+  const { app, directory } = await setup(t);
+  await requestError(app, "/api/agents", jsonOptions("POST", {
+    name: "OpenCode Invalid",
+    nodeId: "mac-mini",
+    transport: "local-opencode",
+    centralWorkspace: join(directory, "opencode-workspace"),
+  }), 400);
+  const agent = await request(app, "/api/agents", jsonOptions("POST", {
+    name: "OpenCode Config",
+    nodeId: "mac-mini",
+    transport: "local-opencode",
+    command: join(directory, "opencode-cli"),
+    centralWorkspace: join(directory, "opencode-workspace"),
+    color: "yellow",
+  }));
+  assert.equal(agent.transport, "local-opencode");
+  assert.equal(agent.command, join(directory, "opencode-cli"));
+  assert.equal(agent.centralWorkspace, join(directory, "opencode-workspace"));
+  assert.equal(Object.keys(agent).some((key) => /token|secret|password|credential|api.?key/i.test(key)), false);
+  const renamed = await request(app, `/api/agents/${agent.id}`, jsonOptions("PATCH", { name: "OpenCode Renamed" }));
+  assert.equal(renamed.command, agent.command);
+  assert.equal(renamed.centralWorkspace, agent.centralWorkspace);
+});

@@ -120,13 +120,14 @@
       <div class="dialog-body form-grid">
         <label class="field"><span>Agent name</span><input id="agent-name-input" maxlength="60" required placeholder="Build Agent"></label>
         <label class="field"><span>Node ID</span><input id="agent-node-input" maxlength="60" required placeholder="mac-mini"></label>
-        <label class="field field-wide"><span>Transport</span><select id="agent-transport"><option value="local-fake">Local fake · offline</option><option value="remote-acp">Remote ACP connector</option></select></label>
+        <label class="field field-wide"><span>Transport</span><select id="agent-transport"><option value="local-fake">Local fake · offline</option><option value="local-opencode">OpenCode · real ACP</option><option value="remote-acp">Remote ACP connector</option></select></label>
         <div class="field-wide config-fields" id="local-agent-fields">
           <label class="field"><span>Workspace path</span><input id="agent-workspace" placeholder="runtime/hub/agent-workspace"></label>
           <label class="field"><span>Session-state path</span><input id="agent-state" placeholder="runtime/hub/agent-state"></label>
         </div>
+        <label class="field field-wide" id="opencode-agent-fields" hidden><span>OpenCode CLI path</span><input id="agent-command" placeholder="/full/path/to/opencode-cli"></label>
         <label class="field field-wide" id="remote-agent-fields" hidden><span>Connector config path</span><input id="agent-config" placeholder="config/agent.demo.json"></label>
-        <label class="field field-wide"><span>Central workspace</span><input id="agent-central-workspace" placeholder="runtime/hub/central"></label>
+        <label class="field field-wide"><span id="central-workspace-label">Central workspace</span><input id="agent-central-workspace" placeholder="runtime/hub/central"></label>
         <label class="field"><span>Identity color</span><select id="agent-color"><option value="yellow">Yellow</option><option value="pink">Pink</option><option value="lavender">Lavender</option></select></label>
         <label class="toggle-field"><input id="agent-enabled" type="checkbox" checked><span>Enabled for execution</span></label>
       </div>

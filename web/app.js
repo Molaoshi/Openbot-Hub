@@ -188,6 +188,7 @@ function openAgentDialog(agent = null) {
   document.querySelector("#agent-workspace").value = agent?.workspace ?? "";
   document.querySelector("#agent-state").value = agent?.state ?? "";
   document.querySelector("#agent-config").value = agent?.config ?? "";
+  document.querySelector("#agent-command").value = agent?.command ?? "";
   document.querySelector("#agent-central-workspace").value = agent?.centralWorkspace ?? "runtime/hub/central";
   document.querySelector("#agent-color").value = agent?.color ?? "yellow";
   document.querySelector("#agent-enabled").checked = agent?.enabled ?? true;
@@ -403,11 +404,17 @@ document.querySelector("#delete-room-button").addEventListener("click", async ()
 function updateTransportFields() {
   const transport = document.querySelector("#agent-transport").value;
   const local = transport === "local-fake";
+  const opencode = transport === "local-opencode";
+  const remote = transport === "remote-acp";
   document.querySelector("#local-agent-fields").hidden = !local;
-  document.querySelector("#remote-agent-fields").hidden = local;
+  document.querySelector("#opencode-agent-fields").hidden = !opencode;
+  document.querySelector("#remote-agent-fields").hidden = !remote;
   document.querySelector("#agent-workspace").required = local;
   document.querySelector("#agent-state").required = local;
-  document.querySelector("#agent-config").required = !local;
+  document.querySelector("#agent-command").required = opencode;
+  document.querySelector("#agent-central-workspace").required = opencode;
+  document.querySelector("#agent-config").required = remote;
+  document.querySelector("#central-workspace-label").textContent = opencode ? "OpenCode workspace" : "Central workspace";
   if (!document.querySelector("#agent-id").value && local && !document.querySelector("#agent-workspace").value) {
     const suffix = crypto.randomUUID().slice(0, 8);
     document.querySelector("#agent-workspace").value = `runtime/hub/agents/${suffix}-workspace`;
@@ -415,7 +422,12 @@ function updateTransportFields() {
     document.querySelector("#agent-central-workspace").value = `runtime/hub/agents/${suffix}-central`;
   }
 }
-document.querySelector("#agent-transport").addEventListener("change", updateTransportFields);
+document.querySelector("#agent-transport").addEventListener("change", () => {
+  if (!document.querySelector("#agent-id").value && document.querySelector("#agent-transport").value === "local-opencode") {
+    document.querySelector("#agent-central-workspace").value = "";
+  }
+  updateTransportFields();
+});
 document.querySelector("#add-agent-button").addEventListener("click", () => openAgentDialog());
 
 document.querySelector("#agent-form").addEventListener("submit", async (event) => {
@@ -434,6 +446,7 @@ document.querySelector("#agent-form").addEventListener("submit", async (event) =
         workspace: document.querySelector("#agent-workspace").value,
         state: document.querySelector("#agent-state").value,
         config: document.querySelector("#agent-config").value,
+        command: document.querySelector("#agent-command").value,
         centralWorkspace: document.querySelector("#agent-central-workspace").value,
         color: document.querySelector("#agent-color").value,
         enabled: document.querySelector("#agent-enabled").checked,

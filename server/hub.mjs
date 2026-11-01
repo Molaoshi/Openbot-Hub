@@ -5,8 +5,8 @@ import { AgentRuntime } from "./agent-runtime.mjs";
 
 const MAX_TURNS_PER_REQUEST = 6;
 const COLORS = new Set(["yellow", "pink", "lavender"]);
-const TRANSPORTS = new Set(["local-fake", "remote-acp"]);
-const EXECUTION_FIELDS = ["nodeId", "transport", "workspace", "state", "config", "centralWorkspace"];
+const TRANSPORTS = new Set(["local-fake", "local-opencode", "remote-acp"]);
+const EXECUTION_FIELDS = ["nodeId", "transport", "command", "workspace", "state", "config", "centralWorkspace"];
 const problem = (message, status = 400) => Object.assign(new Error(message), { status });
 const clean = (value, fallback = "") => typeof value === "string" ? value.trim() : fallback;
 
@@ -281,6 +281,9 @@ export class Hub {
     if (transport === "remote-acp") {
       agent.config = clean(input.config, existing?.config);
       if (!agent.config) throw problem("Remote ACP agents require a connector config path.");
+    } else if (transport === "local-opencode") {
+      agent.command = clean(input.command, existing?.command);
+      if (!agent.command || !agent.centralWorkspace) throw problem("OpenCode agents require a CLI path and workspace.");
     } else {
       agent.workspace = clean(input.workspace, existing?.workspace);
       agent.state = clean(input.state, existing?.state);

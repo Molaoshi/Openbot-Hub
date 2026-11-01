@@ -170,6 +170,15 @@ try {
   await cdp.evaluate(`(() => {
     document.querySelector('#agent-name-input').value = 'Browser Helper';
     document.querySelector('#agent-node-input').value = 'mac-mini';
+    document.querySelector('#agent-transport').value = 'local-opencode';
+    document.querySelector('#agent-transport').dispatchEvent(new Event('change'));
+  })()`);
+  const opencodeFields = await cdp.evaluate(`!document.querySelector('#opencode-agent-fields').hidden && document.querySelector('#agent-command').required && document.querySelector('#agent-central-workspace').required && document.querySelector('#central-workspace-label').textContent === 'OpenCode workspace'`);
+  if (!opencodeFields) throw new Error("OpenCode agent form acceptance failed");
+  await cdp.evaluate(`(() => {
+    document.querySelector('#agent-transport').value = 'local-fake';
+    document.querySelector('#agent-transport').dispatchEvent(new Event('change'));
+    document.querySelector('#agent-central-workspace').value = 'runtime/hub/browser-helper-central';
   })()`);
   await cdp.screenshot("agent-dialog");
   await cdp.evaluate(`document.querySelector('#agent-form').requestSubmit()`);
