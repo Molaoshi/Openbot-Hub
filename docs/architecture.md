@@ -48,13 +48,14 @@ The current demo implements both paths on the Mac mini. Its `demo-dell` node pro
 Owns:
 
 - The global Army room, project rooms, shared transcripts, and agent directory.
+- Project-room rename, purpose/membership editing, and confirmed history deletion.
 - Persistent agent definitions and references to their harness sessions.
-- Per-agent execution queues.
+- Per-agent execution queues and persisted supervision records.
 - Direct mentions, room-scoped `@everyone`, idempotent user-post receipts, and a six-turn request limit.
 - Live browser updates over server-sent events.
 - Host-independent agent addressing.
 
-It does not yet own approvals, attachment replication, autonomous delegation, reusable teams, or project-room editing/deletion.
+It does not yet own approvals, attachment replication, autonomous delegation, or reusable teams.
 
 ### Execution-node connector
 
@@ -72,9 +73,11 @@ It must not:
 - Silently execute a remote agent's work on the Mini.
 - Blindly retry a turn whose execution outcome is unknown.
 
+The current connector uses authenticated raw TCP and is accepted only as a loopback demo. Before physical-machine deployment in M4, traffic must use a protected Tailscale path or TLS with explicit binding rules.
+
 ### Harness on each machine
 
-Owns its native provider authentication, tools, workspace behavior, and local project memory. Real harness adapters are future work; the current harness is deterministic and offline.
+Owns its native provider authentication, tools, workspace behavior, and local project memory. Local-fake and remote-fake harnesses support deterministic offline acceptance. The real `local-opencode` adapter launches the installed OpenCode CLI over ACP, reuses its native provider profile and session storage, and passes real work through the same Hub queue and execution boundary.
 
 ## Agent and room configuration
 
@@ -86,7 +89,7 @@ Each agent maps:
 Hub agent ID ↔ execution node ID ↔ harness session ID ↔ workspace
 ```
 
-Local-fake agents define `workspace` and `state`; remote-ACP agents reference a connector config containing node address, agent ID, and a local token-file reference. Editing execution configuration stops the old connector and resets its session reference; editing only presentation or enabled state preserves it. Removing an agent deletes its registry membership but not its historical messages.
+Local-fake agents define `workspace` and `state`; remote-ACP agents reference a connector config containing node address, agent ID, and a local token-file reference. OpenCode agents require a non-secret CLI path and an explicit workspace; one workspace cannot be owned by multiple OpenCode agents. Editing execution configuration stops the old connector and resets its session reference; editing only presentation or enabled state preserves it. Removing an agent deletes its registry membership but not its historical messages.
 
 The Army room is global and always addresses every enabled agent. Project rooms persist explicit member lists. Removing an agent also removes its project-room memberships.
 
@@ -101,17 +104,25 @@ The Army room is global and always addresses every enabled agent. Project rooms 
 7. Replies return to the originating room with author, origin, and execution-node identity.
 8. Saved session IDs are reused after application restart.
 
-A repeated client message ID returns the original receipt and starts no new execution. Automatic recovery of an interrupted active turn is not yet implemented and must not be assumed safe.
+A repeated client message ID returns the original receipt and starts no new execution. Automatic recovery of an interrupted active turn is not implemented and must not be assumed safe. Fake-agent stop/retry evidence is complete; real OpenCode cancellation and failure supervision remain partial.
+
+## State and failure rules
+
+- A missing state file seeds a new demo; an unreadable, malformed, or non-object state file aborts startup without replacing the original.
+- Loading a valid existing state creates a `.load-backup` copy before the Hub writes its recovered representation.
+- ACP spawn/stream failures reject pending work and reset startup state rather than terminating the Node process.
+- Provider and connector errors are redacted before health records, execution history, room messages, or HTTP responses persist or display them.
 
 ## Workspace and tool rules
 
-A central path must never be passed blindly to a remote machine. Each remote agent has an explicit node-local workspace root. Execution-proof files record the node ID, hostname, process, session, and actual workspace.
+A central path must never be passed blindly to a remote machine. Each remote agent has an explicit node-local workspace root. Execution-proof files record the node ID, hostname, process, session, and actual workspace. Real OpenCode acceptance checks exact native file content and unexpected task artifacts within its isolated acceptance root; this is not an OS-level sandbox.
 
 Future attachments require deliberate transfer, size limits, and hash verification. Future remote tools require explicit execution-location and authorization tests; central browser or computer-use tools must never be presented as remote-machine tools.
 
 ## Security and deployment
 
-- The web server listens on `127.0.0.1` by default.
+- The web server listens on `127.0.0.1` by default and accepts only loopback Host headers.
+- Browser mutations require a same-origin `Origin` when supplied, reject cross-site fetch metadata, and require `application/json` for request bodies. Non-browser CLI requests without an Origin remain supported on loopback.
 - Connector credentials are generated locally, stored with owner-only permissions, and excluded from Git.
 - Tailscale provides reachability, not application authorization. Secure phone access still needs an authenticated access design before binding the web server to a non-loopback interface.
 - No vendor hosted server is required.
@@ -121,18 +132,19 @@ Future attachments require deliberate transfer, size limits, and hash verificati
 
 Implemented and tested:
 
-- Account-free responsive Army and project rooms.
+- Account-free responsive Army and project rooms, including complete project-room lifecycle controls.
 - Persistent agent lifecycle management with history-preserving removal.
-- Local and remote-ACP fake agents.
-- Durable sessions and state.
+- Local and remote-ACP fake agents plus a real local OpenCode ACP adapter.
+- Durable native/demo sessions and state.
 - Node-tagged replies and execution evidence.
-- Room-scoped `@everyone`, duplicate-post suppression, and restart recovery.
-- Desktop and 390 px mobile chat, drawer, and management-form acceptance.
+- Room-scoped `@everyone`, duplicate-post suppression, supervision, and restart recovery.
+- Real OpenCode native file and post-restart session-recall acceptance.
+- Desktop and 390 px mobile chat, drawer, management-form, and OpenCode-form acceptance.
 
 Not yet implemented:
 
-- Project-room editing/deletion and reusable teams.
+- Reusable teams and controlled delegation.
 - Physical Dell and MacBook enrollment.
-- Real DSH, OpenCode, Hermes, or Grok adapters.
-- Approvals, attachments, rich tool rendering, and autonomous delegation.
-- Network user authentication and production hardening.
+- DSH, Hermes, or Grok adapters.
+- Approvals, attachments, generated-file return, and rich tool rendering.
+- Real OpenCode stop/failure supervision, network user authentication, and production hardening.

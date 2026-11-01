@@ -5,10 +5,12 @@ This is the implementation and acceptance index for `docs/product-requirements.m
 ## Evidence commands
 
 - **CHECK:** `npm run check` — JavaScript syntax validation.
-- **APP:** `node --test tests/hub-app.test.mjs` — registry, rooms, API routing, idempotency, and restart integration.
+- **APP:** `node --test tests/hub-app.test.mjs` — registry, rooms, API routing, idempotency, restart integration, foreign request rejection, and malformed-state preservation.
 - **ACP:** `node --test tests/remote-acp.test.mjs` — connector execution, workspace proof, resume, and credential rejection.
-- **SUP:** `node --test tests/supervision.test.mjs` — connectivity, concurrent idempotency, queue ordering, stop, safe retry, and active-deletion safeguards.
+- **SUP:** `node --test tests/supervision.test.mjs` — connectivity, startup-failure containment, redaction, unique workspaces, concurrent idempotency, queue ordering, fake stop, safe retry, and active-deletion safeguards.
+- **CI:** `.github/workflows/test.yml` — runs CHECK and all offline tests for every PR and push to `main`; browser and live provider evidence remains local.
 - **UI:** `npm run test:ui` — isolated Chrome desktop and 390 px phone acceptance; artifacts are written under ignored `artifacts/ui-validation/`.
+- **REAL:** `npm run test:opencode` — two small live OpenCode calls covering native file evidence, identity, lifecycle, isolated task artifacts, credential-field isolation, and native session resume after Hub restart; report under ignored `artifacts/opencode-acceptance/`.
 - **SVC:** `launchctl print gui/$(id -u)/com.molaoshi.openbot-hub` plus health/state checks and an intentional `kickstart -k` restart.
 
 `npm test` runs APP, ACP, and SUP. UI requires macOS and Google Chrome. Future physical-phone, Dell, MacBook, security, and backup gates require their own recorded evidence; local simulation is not a substitute.
@@ -16,8 +18,8 @@ This is the implementation and acceptance index for `docs/product-requirements.m
 ## Status summary
 
 - **M0:** Local foundation; mostly complete, with broader requirements still partial.
-- **M1:** Complete; supervision and room exit gate passed on 2026-11-02.
-- **M2:** Next milestone; real harness and file work has not started.
+- **M1:** Complete for its original fake-agent scope; real-adapter supervision remains Partial under EXEC-03.
+- **M2:** Active; real OpenCode native execution and session-resume evidence passed on 2026-11-02, while approvals, rich progress, and file exchange remain open.
 - **M3–M5:** Planned; see `docs/migration-plan.md`.
 - No P0/P1 requirement may be called Done from implementation alone; the evidence column must actually pass.
 
@@ -43,21 +45,21 @@ This is the implementation and acceptance index for `docs/product-requirements.m
 | ID | Milestone | Status | Acceptance evidence |
 |---|---|---|---|
 | AGENT-01 | M0 | Done | APP and UI cover add, rename, disable, re-enable, resume, removal, duplicate-name rejection, and history preservation. |
-| AGENT-02 | M2 | Partial | APP/ACP prove a common runtime over local-fake and remote-ACP; a real harness must pass the same boundary tests. |
-| AGENT-03 | M1 | Done | SUP verifies available, unavailable, misconfigured, disabled, and session/unknown transitions; UI runs connectivity checks and displays health. |
-| AGENT-04 | M2 | Planned | Run a real DSH or OpenCode agent in a disposable workspace; verify prompt, tools, session resume, failures, and credential isolation. |
+| AGENT-02 | M2 | Done | APP/ACP prove the shared runtime over local-fake and remote-ACP; REAL drives real OpenCode through the same queue, session, execution, and reply boundary. |
+| AGENT-03 | M1 | Done | SUP verifies available, unavailable, misconfigured, disabled, and session/unknown transitions; REAL verifies OpenCode availability; UI runs connectivity checks and displays health. |
+| AGENT-04 | M2 | Done | REAL passes two live OpenCode turns: exact native file creation, isolated task artifacts, correct identity/lifecycle, no provider credential fields in registry state, and the same native session recalling its token after Hub restart. DSH and other harnesses remain independent future adapters. |
 
 ## Execution supervision and reliability
 
 | ID | Milestone | Status | Acceptance evidence |
 |---|---|---|---|
 | EXEC-01 | M1 | Done | SUP proves concurrent duplicate-post suppression, per-agent queued/running order, and ordered replies; APP retains single-post idempotency coverage. |
-| EXEC-02 | M1 | Done | APP/SUP verify persisted queued/running/completed/failed/interrupted/unknown histories and result links; UI exposes applicable states without false success. Waiting is reserved for M2 approvals. |
-| EXEC-03 | M1 | Done | SUP stops queued and active fake turns, proves no stopped reply, resource cleanup, and subsequent execution; UI stops a slow active turn. |
+| EXEC-02 | M1 | Done | APP/SUP verify persisted queued/running/completed/failed/interrupted/unknown histories and result links; REAL verifies queued/running/completed with result identity on OpenCode; UI exposes applicable states without false success. Waiting is reserved for M2 approvals. |
+| EXEC-03 | M1 | Partial | SUP stops queued and active fake turns, proves no stopped reply, resource cleanup, and subsequent execution; UI stops a slow active turn. Real OpenCode cancellation, descendant cleanup, provider failure, and post-interruption execution evidence remain required before this covers real adapters. |
 | EXEC-04 | M1 | Done | APP/SUP prove unknown recovery without reruns, rejected unknown/interrupted retries, one known-safe fail-once retry, and completed attempt-two linking; UI exercises safe retry. |
-| EXEC-05 | M2 | Planned | Script question/approval round trips, wrong-session rejection, expiry, stop, and terminal-state persistence. |
-| EXEC-06 | M2 | Planned | Display realistic tool/progress events and verify node attribution and failure rendering in APP/UI. |
-| EXEC-07 | M2 | Partial | ACP proves fake node/workspace/hostname evidence; repeat on every real adapter and physical node. |
+| EXEC-05 | M2 | Next | Script question/approval round trips, wrong-session rejection, expiry, stop, and terminal-state persistence. |
+| EXEC-06 | M2 | Next | Display realistic tool/progress events and verify node attribution and failure rendering in APP/UI. |
+| EXEC-07 | M2 | Done | ACP proves fake node/workspace/hostname evidence; REAL verifies OpenCode `mac-mini` reply identity, origin linkage, exact workspace file content, and no unexpected task artifacts elsewhere in the isolated acceptance root. Physical-node evidence remains under M4. |
 
 ## Teams and coordination
 
@@ -72,8 +74,8 @@ This is the implementation and acceptance index for `docs/product-requirements.m
 
 | ID | Milestone | Status | Acceptance evidence |
 |---|---|---|---|
-| FILE-01 | M2 | Planned | Verify content/hash, limits, traversal rejection, interrupted transfer, and retry-safe attachment handling. |
-| FILE-02 | M2 | Planned | Return and preview generated files across local and remote paths with size/hash verification. |
+| FILE-01 | M2 | Next | Verify content/hash, limits, traversal rejection, interrupted transfer, and retry-safe attachment handling. |
+| FILE-02 | M2 | Next | Return and preview generated files across local and remote paths with size/hash verification. |
 
 ## Execution nodes
 
@@ -96,9 +98,9 @@ This is the implementation and acceptance index for `docs/product-requirements.m
 
 | ID | Milestone | Status | Acceptance evidence |
 |---|---|---|---|
-| SEC-01 | M5 | Partial | Current server defaults to loopback and the app contains no commerce/analytics flows; complete actual egress and permission review. |
-| SEC-02 | M4 | Planned | Unauthenticated/wrong-identity requests fail before any non-loopback exposure; authorized phone access succeeds. |
-| SEC-03 | M5 | Partial | Demo tokens use separate owner-only files and are Git-ignored; audit storage, logs, rotation, and provider-secret isolation. |
+| SEC-01 | M5 | Partial | APP rejects foreign Origin/Host and non-JSON mutations before execution; server defaults to loopback and contains no commerce/analytics flows. Actual egress and permission review remain. |
+| SEC-02 | M4 | Planned | Unauthenticated/wrong-identity requests fail before any non-loopback exposure; authorized phone access succeeds. Remote-ACP raw TCP must use protected Tailscale or TLS before physical deployment. |
+| SEC-03 | M5 | Partial | SUP proves fake provider stderr is redacted from health, messages, execution errors, and persisted state; REAL inspects the persisted registry. Demo tokens use owner-only Git-ignored files; complete storage, rotation, and log review remains. |
 | OPS-01 | M0 | Done | SVC restart recovered health and preserved one room, two agents, and six existing messages on 2026-11-02. |
 | OPS-02 | M5 | Planned | Back up and restore Hub, sessions, registry, and node configuration into an isolated acceptance instance. |
 | OPS-03 | M5 | Planned | Rotate/revoke credentials and remove a node without unauthorized access or unrelated-agent disruption. |
@@ -113,4 +115,4 @@ This is the implementation and acceptance index for `docs/product-requirements.m
 
 ## Current release conclusion
 
-OpenBot Hub is a verified local proof of concept with M1 supervision complete, not full-feature V1. M2 is the next milestone and has not started. Physical devices, real harnesses, and production readiness must not be inferred from fake-agent or phone-sized-browser evidence.
+OpenBot Hub is a verified local application with M1 supervision complete and M2 active, not full-feature V1. One real OpenCode adapter has passed native file, identity, lifecycle, and session-resume acceptance; the remaining M2 file-exchange, approval, and rich-progress gates are open. Physical devices, other real harnesses, and production readiness must not be inferred from this local adapter or phone-sized-browser evidence.

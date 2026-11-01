@@ -62,6 +62,7 @@ Full-feature V1 requires every P0 and P1 requirement to be Done, followed by the
 - Secrets never enter Git, prompts, message history, or the agent registry.
 - Central paths and tools are never silently treated as remote paths and tools.
 - Payment, billing, hosted execution, user reporting, external analytics, and telemetry are excluded.
+- Complete OpenBot feature parity is not the V1 goal. Selected leads, task revisions, Continue/Reassign, and Archive/Restore are post-V1 unless separately approved; V1 coordination remains rooms, teams, controlled delegation, and synthesized results.
 - The server remains loopback-only until authenticated remote access is implemented.
 
 ## 5. Functional requirements
@@ -180,17 +181,19 @@ Full-feature V1 requires every P0 and P1 requirement to be Done, followed by the
 
 ## 8. Current baseline
 
-The local proof of concept has established the account-free app, persistent service, Army room, complete project-room lifecycle, persistent fake-agent registry, fake local and remote-ACP execution, durable demo sessions, execution evidence, connectivity health, execution supervision, queued/active stop, known-safe retry, unknown-outcome recovery, responsive management screens, and offline integration/browser tests.
+The local application has established the account-free app, persistent service, Army room, complete project-room lifecycle, persistent agent registry, fake local and remote-ACP execution, a real local OpenCode ACP adapter, durable native and demo sessions, execution evidence, connectivity health, execution supervision, queued/active stop, known-safe retry, unknown-outcome recovery, responsive management screens, and offline integration/browser tests.
 
-This baseline is not full-feature V1. Real harness work, physical multi-machine execution, secure phone connectivity, teams, files, and production recovery remain incomplete.
+Real OpenCode acceptance has proven native file creation, correct origin/agent/node/room identity, queued/running/completed history, workspace-only task artifacts within an isolated acceptance root, and native session resume after a Hub restart. Provider credentials remain in OpenCode's own profile rather than Hub configuration. This acceptance is not an operating-system sandbox and does not prevent OpenCode from maintaining its own profile/session storage.
 
-## 9. Next milestone: M2 real work and files
+This baseline is not full-feature V1. Other real harnesses, physical multi-machine execution, secure phone connectivity, teams, attachments/generated-file return, approvals, rich tool progress, and production recovery remain incomplete.
 
-M1 supervision and room completion passed its exit gate on 2026-11-02. M2 is the next milestone and has not started. It includes:
+## 9. Active milestone: M2 real work and files
 
-- AGENT-02 and AGENT-04: prove the shared runtime with a real DSH or OpenCode adapter.
+M1 supervision and room completion passed its exit gate on 2026-11-02. M2 is active. AGENT-02, AGENT-04, and EXEC-07 now have real OpenCode evidence; the complete M2 exit gate remains open. The milestone includes:
+
+- AGENT-02 and AGENT-04: shared-runtime and real OpenCode acceptance are Done; add other required harnesses independently.
 - EXEC-05 and EXEC-06: round-trip questions/approvals and render tool/progress events.
-- EXEC-07: repeat execution-location evidence on the real adapter.
+- EXEC-07: real OpenCode execution-location and workspace evidence is Done; physical-node evidence remains under M4.
 - FILE-01 and FILE-02: deliberate attachments and generated-file return with integrity and containment checks.
 - Regression evidence for all previously completed requirements.
 

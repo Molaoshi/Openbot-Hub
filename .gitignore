@@ -17,7 +17,8 @@ out/
 .next/
 .turbo/
 
-# Runtime state and acceptance evidence
+# Runtime state, local reviews, and acceptance evidence
+.analysis/
 runtime/
 .runtime/
 artifacts/

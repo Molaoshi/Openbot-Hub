@@ -1,3 +1,4 @@
+import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import { AcpClient } from "./acp-client.mjs";
 
@@ -17,26 +18,39 @@ export class AgentRuntime {
     return agent;
   }
 
+  workspace(agent) {
+    return resolve(this.root, agent.centralWorkspace ?? agent.workspace ?? "runtime/hub/central");
+  }
+
   client(agent) {
     if (this.clients.has(agent.id)) return this.clients.get(agent.id);
     const common = { cwd: this.root };
-    const client = agent.transport === "remote-acp"
-      ? new AcpClient({
-          ...common,
-          command: process.execPath,
-          args: [resolve(this.root, "connectors/remote-acp/proxy.mjs"), "--config", resolve(this.root, agent.config)],
-        })
-      : new AcpClient({
-          ...common,
-          command: process.execPath,
-          args: [resolve(this.root, "connectors/remote-acp/fake-harness.mjs")],
-          env: {
-            OPENBOT_HUB_NODE_ID: agent.nodeId,
-            OPENBOT_HUB_AGENT_TITLE: agent.name,
-            OPENBOT_HUB_WORKSPACE: resolve(this.root, agent.workspace),
-            OPENBOT_HUB_STATE_ROOT: resolve(this.root, agent.state),
-          },
-        });
+    let client;
+    if (agent.transport === "remote-acp") {
+      client = new AcpClient({
+        ...common,
+        command: process.execPath,
+        args: [resolve(this.root, "connectors/remote-acp/proxy.mjs"), "--config", resolve(this.root, agent.config)],
+      });
+    } else if (agent.transport === "local-opencode") {
+      client = new AcpClient({
+        command: agent.command,
+        args: ["acp"],
+        cwd: this.workspace(agent),
+      });
+    } else {
+      client = new AcpClient({
+        ...common,
+        command: process.execPath,
+        args: [resolve(this.root, "connectors/remote-acp/fake-harness.mjs")],
+        env: {
+          OPENBOT_HUB_NODE_ID: agent.nodeId,
+          OPENBOT_HUB_AGENT_TITLE: agent.name,
+          OPENBOT_HUB_WORKSPACE: resolve(this.root, agent.workspace),
+          OPENBOT_HUB_STATE_ROOT: resolve(this.root, agent.state),
+        },
+      });
+    }
     this.clients.set(agent.id, client);
     return client;
   }
@@ -48,8 +62,9 @@ export class AgentRuntime {
       await onStart();
       if (this.cancellations.has(executionId)) return { cancelled: true };
       const agent = this.definition(agentId);
+      const centralWorkspace = this.workspace(agent);
+      await mkdir(centralWorkspace, { recursive: true });
       const client = this.client(agent);
-      const centralWorkspace = resolve(this.root, agent.centralWorkspace ?? agent.workspace ?? "runtime/hub/central");
       const actualSession = await client.ensureSession(sessionId, centralWorkspace);
       if (actualSession !== sessionId) await this.onSession(agentId, actualSession);
       return client.prompt(actualSession, text);
@@ -63,7 +78,9 @@ export class AgentRuntime {
   }
 
   async test(agentId) {
-    const client = this.client(this.definition(agentId));
+    const agent = this.definition(agentId);
+    await mkdir(this.workspace(agent), { recursive: true });
+    const client = this.client(agent);
     await client.start();
   }
 
