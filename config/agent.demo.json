@@ -1,0 +1,6 @@
+{
+  "agentId": "dell-fake",
+  "host": "127.0.0.1",
+  "port": 43117,
+  "tokenFile": "runtime/demo/token"
+}

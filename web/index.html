@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#faf9ea">
+  <title>OpenBot Hub — Army</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="backdrop" id="backdrop" hidden></div>
+  <div class="app-shell">
+    <aside class="rail drawer" id="rail" aria-label="Rooms and nodes">
+      <div class="wordmark">
+        <span>OPENBOT</span><span class="wordmark-hub">HUB</span>
+        <button class="icon-button drawer-close" data-close="rail" aria-label="Close rooms panel">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+        </button>
+      </div>
+      <div class="section-heading">
+        <span class="rail-section-label">ROOMS / <span id="room-count">01</span></span>
+        <button class="text-button" id="add-room-button" type="button">+ NEW</button>
+      </div>
+      <nav class="room-list" id="room-list" aria-label="Conversations"></nav>
+      <div class="rail-rule"></div>
+      <div class="rail-section-label">CONTROL PLANE</div>
+      <dl class="control-list">
+        <div><dt>Host</dt><dd>Mac mini</dd></div>
+        <div><dt>Access</dt><dd>Local only</dd></div>
+        <div><dt>Account</dt><dd>Not required</dd></div>
+        <div><dt>Telemetry</dt><dd>None</dd></div>
+      </dl>
+      <div class="rail-foot">
+        <span class="status-dot"></span>
+        <span>PRIVATE BY CONSTRUCTION</span>
+      </div>
+    </aside>
+
+    <main class="conversation">
+      <header class="channel-header">
+        <button class="icon-button mobile-only" id="rooms-button" aria-label="Open rooms panel">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+        </button>
+        <div class="channel-title">
+          <div class="eyebrow" id="room-eyebrow">GLOBAL ARMY ROOM</div>
+          <h1><span id="room-name">Army</span> <span class="channel-hash" id="room-membership">/ all agents</span></h1>
+        </div>
+        <button class="icon-button" id="edit-room-button" type="button" aria-label="Edit current room">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 16-1 5 5-1L19 9l-4-4L4 16ZM13.5 6.5l4 4"/></svg>
+        </button>
+        <div class="connection-state" id="connection-state"><span class="status-dot"></span><span>LIVE</span></div>
+        <button class="icon-button inspector-button" id="agents-button" aria-label="Open agents panel">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        </button>
+      </header>
+
+      <section class="messages" id="messages" aria-label="Room conversation" aria-live="polite"></section>
+
+      <footer class="composer-wrap">
+        <div class="mention-row" id="mention-row" aria-label="Address an agent"></div>
+        <form class="composer" id="composer">
+          <label class="sr-only" for="message-input">Message the current room</label>
+          <textarea id="message-input" rows="2" maxlength="16000" placeholder="Message the room — @mention an agent to execute…" required></textarea>
+          <button class="send-button" id="send-button" type="submit" aria-label="Send message">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m22 2-7 20-4-9-9-4Z M22 2 11 13"/></svg>
+          </button>
+        </form>
+        <div class="composer-meta"><span>ENTER TO SEND · SHIFT+ENTER FOR A NEW LINE</span><span>6-TURN GLOBAL LIMIT</span></div>
+      </footer>
+    </main>
+
+    <aside class="inspector drawer" id="inspector" aria-label="Agent directory">
+      <div class="inspector-top">
+        <div class="section-heading">
+          <div class="eyebrow">EXECUTION DIRECTORY</div>
+          <button class="text-button" id="add-agent-button" type="button">+ ADD</button>
+        </div>
+        <button class="icon-button drawer-close" data-close="inspector" aria-label="Close agents panel">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+        </button>
+        <div class="army-count" id="army-count">02</div>
+        <p class="inspector-intro">One identity per agent. Execution stays on its assigned machine.</p>
+      </div>
+      <div class="agent-list" id="agent-list"></div>
+      <div class="proof-note">
+        <div class="eyebrow">EXECUTION PROOF</div>
+        <p>Every reply carries its node identity. The demo also writes host and workspace evidence on the execution node.</p>
+      </div>
+      <div class="protocol-note">ACP TRANSPORT<br>JSON STATE<br>ZERO VENDOR DEPENDENCIES</div>
+    </aside>
+  </div>
+
+  <dialog class="management-dialog" id="room-dialog" aria-labelledby="room-dialog-title">
+    <form id="room-form">
+      <input id="room-id" type="hidden">
+      <header class="dialog-header">
+        <div><div class="eyebrow">COORDINATION SPACE</div><h2 id="room-dialog-title">Create a room</h2></div>
+        <button class="icon-button" type="button" data-dialog-close="room-dialog" aria-label="Close room dialog">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+        </button>
+      </header>
+      <div class="dialog-body">
+        <label class="field"><span>Room name</span><input id="room-name-input" maxlength="80" required placeholder="Lablooba launch"></label>
+        <label class="field"><span>Purpose</span><textarea id="room-purpose-input" maxlength="240" rows="2" placeholder="What should this team accomplish?"></textarea></label>
+        <fieldset class="members-field"><legend>Agent members</legend><div class="member-options" id="room-member-options"></div></fieldset>
+      </div>
+      <footer class="dialog-actions"><button class="button-danger" id="delete-room-button" type="button" hidden>Delete room</button><span class="action-spacer"></span><button class="button-secondary" type="button" data-dialog-close="room-dialog">Cancel</button><button class="button-primary" id="save-room-button" type="submit">Create room</button></footer>
+    </form>
+  </dialog>
+
+  <dialog class="management-dialog agent-dialog" id="agent-dialog" aria-labelledby="agent-dialog-title">
+    <form id="agent-form">
+      <input id="agent-id" type="hidden">
+      <header class="dialog-header">
+        <div><div class="eyebrow">PERSISTENT REGISTRY</div><h2 id="agent-dialog-title">Add an agent</h2></div>
+        <button class="icon-button" type="button" data-dialog-close="agent-dialog" aria-label="Close agent dialog">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+        </button>
+      </header>
+      <div class="dialog-body form-grid">
+        <label class="field"><span>Agent name</span><input id="agent-name-input" maxlength="60" required placeholder="Build Agent"></label>
+        <label class="field"><span>Node ID</span><input id="agent-node-input" maxlength="60" required placeholder="mac-mini"></label>
+        <label class="field field-wide"><span>Transport</span><select id="agent-transport"><option value="local-fake">Local fake · offline</option><option value="remote-acp">Remote ACP connector</option></select></label>
+        <div class="field-wide config-fields" id="local-agent-fields">
+          <label class="field"><span>Workspace path</span><input id="agent-workspace" placeholder="runtime/hub/agent-workspace"></label>
+          <label class="field"><span>Session-state path</span><input id="agent-state" placeholder="runtime/hub/agent-state"></label>
+        </div>
+        <label class="field field-wide" id="remote-agent-fields" hidden><span>Connector config path</span><input id="agent-config" placeholder="config/agent.demo.json"></label>
+        <label class="field field-wide"><span>Central workspace</span><input id="agent-central-workspace" placeholder="runtime/hub/central"></label>
+        <label class="field"><span>Identity color</span><select id="agent-color"><option value="yellow">Yellow</option><option value="pink">Pink</option><option value="lavender">Lavender</option></select></label>
+        <label class="toggle-field"><input id="agent-enabled" type="checkbox" checked><span>Enabled for execution</span></label>
+      </div>
+      <footer class="dialog-actions"><button class="button-danger" id="remove-agent-button" type="button" hidden>Remove</button><span class="action-spacer"></span><button class="button-secondary" type="button" data-dialog-close="agent-dialog">Cancel</button><button class="button-primary" id="save-agent-button" type="submit">Save agent</button></footer>
+    </form>
+  </dialog>
+
+  <div class="toast" id="toast" role="alert" hidden></div>
+  <script src="/app.js" type="module"></script>
+</body>
+</html>

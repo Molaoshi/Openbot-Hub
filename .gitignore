@@ -1,0 +1,41 @@
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p8
+*.p12
+secrets/
+credentials/
+
+# Dependencies and builds
+node_modules/
+dist/
+build/
+out/
+.next/
+.turbo/
+
+# Runtime state and acceptance evidence
+runtime/
+.runtime/
+artifacts/
+.openbot-build/
+*.log
+*.pid
+*.db
+*.db-shm
+*.db-wal
+
+# OS and editors
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Language/tool caches
+.cache/
+coverage/
+__pycache__/
+*.pyc

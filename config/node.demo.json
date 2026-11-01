@@ -1,0 +1,15 @@
+{
+  "nodeId": "demo-dell",
+  "listenHost": "127.0.0.1",
+  "listenPort": 43117,
+  "tokenFile": "runtime/demo/token",
+  "workspaceRoot": "runtime/demo/dell-workspace",
+  "stateRoot": "runtime/demo/dell-state",
+  "agents": [
+    {
+      "agentId": "dell-fake",
+      "title": "Dell Fake",
+      "command": "connectors/remote-acp/fake-harness.mjs"
+    }
+  ]
+}
