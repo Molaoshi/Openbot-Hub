@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import http from "node:http";
 import { once } from "node:events";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -359,4 +360,71 @@ test("persistent registry, dynamic rooms, routing, deduplication, and restart re
   const afterRemove = await request(app, "/api/state");
   assert.equal(afterRemove.agents.some((agent) => agent.id === helper.id), false);
   assert.equal(afterRemove.messages.some((message) => message.authorId === helper.id), true);
+});
+
+test("loopback API rejects foreign origins, hosts, and non-JSON mutations without executing", { timeout: 30_000 }, async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "openbot-hub-origin-test-"));
+  await writeFile(join(directory, "agents.json"), JSON.stringify([{
+    id: "mini-fake",
+    name: "Mini Fake",
+    nodeId: "mac-mini",
+    transport: "local-fake",
+    workspace: join(directory, "mini-workspace"),
+    state: join(directory, "mini-state"),
+    centralWorkspace: join(directory, "mini-central"),
+  }]));
+  const app = await startApp(directory);
+  t.after(async () => {
+    await stopProcess(app.child);
+    await rm(directory, { recursive: true, force: true });
+  });
+  const payload = JSON.stringify({ text: "@Mini Fake must not execute", clientMessageId: "foreign-request" });
+  const rejected = [];
+  for (const headers of [
+    { Origin: "https://malicious.example", "Content-Type": "text/plain" },
+    { "Content-Type": "text/plain" },
+  ]) {
+    const response = await fetch(new URL("/api/messages", app.base), { method: "POST", headers, body: payload });
+    rejected.push(response.status);
+    await response.json();
+  }
+  const rawPost = (headers) => new Promise((resolveStatus, reject) => {
+    const raw = http.request({
+      hostname: app.base.hostname,
+      port: app.base.port,
+      path: "/api/messages",
+      method: "POST",
+      headers: { ...headers, "Content-Length": Buffer.byteLength(payload) },
+    }, (response) => {
+      response.resume();
+      response.once("end", () => resolveStatus(response.statusCode));
+    });
+    raw.once("error", reject);
+    raw.end(payload);
+  });
+  rejected.push(await rawPost({ Host: "malicious.example", "Content-Type": "application/json" }));
+  rejected.push(await rawPost({ Host: "malicious.example", Origin: app.base.origin, "Content-Type": "application/json" }));
+  assert.deepEqual(rejected, [403, 415, 403, 403]);
+  const state = await request(app, "/api/state");
+  assert.equal(state.executions.length, 0);
+  assert.equal(state.messages.length, 1);
+  const accepted = await fetch(new URL("/api/messages", app.base), {
+    method: "POST",
+    headers: { Origin: app.base.origin, "Content-Type": "application/json" },
+    body: JSON.stringify({ text: "@Mini Fake same origin", clientMessageId: "same-origin" }),
+  });
+  assert.equal(accepted.status, 202);
+  await accepted.json();
+  await waitForReply(app, (await request(app, "/api/state")).messages.find((message) => message.text === "@Mini Fake same origin").id, "mini-fake");
+});
+
+test("malformed state aborts startup without replacing the original file", { timeout: 30_000 }, async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "openbot-hub-corrupt-state-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  await writeFile(join(directory, "agents.json"), "[]\n");
+  const damaged = "{ definitely-not-valid-json\n";
+  const statePath = join(directory, "hub-state.json");
+  await writeFile(statePath, damaged);
+  await assert.rejects(startApp(directory), /Process exited|startup timed out/);
+  assert.equal(await readFile(statePath, "utf8"), damaged);
 });

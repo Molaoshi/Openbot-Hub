@@ -62,6 +62,7 @@ Full-feature V1 requires every P0 and P1 requirement to be Done, followed by the
 - Secrets never enter Git, prompts, message history, or the agent registry.
 - Central paths and tools are never silently treated as remote paths and tools.
 - Payment, billing, hosted execution, user reporting, external analytics, and telemetry are excluded.
+- Complete OpenBot feature parity is not the V1 goal. Selected leads, task revisions, Continue/Reassign, and Archive/Restore are post-V1 unless separately approved; V1 coordination remains rooms, teams, controlled delegation, and synthesized results.
 - The server remains loopback-only until authenticated remote access is implemented.
 
 ## 5. Functional requirements

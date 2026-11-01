@@ -215,13 +215,19 @@ test("queue ordering, concurrent deduplication, stop, safe retry, and active-roo
   assert.equal(deletion.deletedExecutions, 1);
 });
 
-test("OpenCode registration requires only non-secret CLI and workspace configuration", { timeout: 30_000 }, async (t) => {
+test("OpenCode registration requires only non-secret CLI and unique explicit workspace configuration", { timeout: 30_000 }, async (t) => {
   const { app, directory } = await setup(t);
   await requestError(app, "/api/agents", jsonOptions("POST", {
     name: "OpenCode Invalid",
     nodeId: "mac-mini",
     transport: "local-opencode",
     centralWorkspace: join(directory, "opencode-workspace"),
+  }), 400);
+  await requestError(app, "/api/agents", jsonOptions("POST", {
+    name: "OpenCode Missing Workspace",
+    nodeId: "mac-mini",
+    transport: "local-opencode",
+    command: join(directory, "opencode-cli"),
   }), 400);
   const agent = await request(app, "/api/agents", jsonOptions("POST", {
     name: "OpenCode Config",
@@ -235,7 +241,53 @@ test("OpenCode registration requires only non-secret CLI and workspace configura
   assert.equal(agent.command, join(directory, "opencode-cli"));
   assert.equal(agent.centralWorkspace, join(directory, "opencode-workspace"));
   assert.equal(Object.keys(agent).some((key) => /token|secret|password|credential|api.?key/i.test(key)), false);
+  await requestError(app, "/api/agents", jsonOptions("POST", {
+    name: "OpenCode Duplicate Workspace",
+    nodeId: "mac-mini",
+    transport: "local-opencode",
+    command: join(directory, "opencode-cli"),
+    centralWorkspace: join(directory, "opencode-workspace"),
+  }), 409);
   const renamed = await request(app, `/api/agents/${agent.id}`, jsonOptions("PATCH", { name: "OpenCode Renamed" }));
   assert.equal(renamed.command, agent.command);
   assert.equal(renamed.centralWorkspace, agent.centralWorkspace);
+});
+
+test("bad OpenCode executables cannot crash the Hub and provider stderr is redacted", { timeout: 30_000 }, async (t) => {
+  const { app, directory } = await setup(t);
+  const missing = await request(app, "/api/agents", jsonOptions("POST", {
+    name: "Missing OpenCode",
+    nodeId: "mac-mini",
+    transport: "local-opencode",
+    command: join(directory, "does-not-exist"),
+    centralWorkspace: join(directory, "missing-workspace"),
+  }));
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const health = await request(app, `/api/agents/${missing.id}/test`, { method: "POST" });
+    assert.equal(health.status, "misconfigured");
+    assert.match(health.error, /ENOENT/);
+    assert.equal((await request(app, "/api/health")).ok, true);
+  }
+
+  const fakeSecret = "unit-test-secret-123456789";
+  const harness = join(directory, "secret-stderr-harness.sh");
+  await writeFile(harness, `#!/bin/sh\nprintf '%s\\n' 'provider token=${fakeSecret}' >&2\nexit 1\n`, { mode: 0o700 });
+  const secretAgent = await request(app, "/api/agents", jsonOptions("POST", {
+    name: "Secret Failure",
+    nodeId: "mac-mini",
+    transport: "local-opencode",
+    command: harness,
+    centralWorkspace: join(directory, "secret-workspace"),
+  }));
+  const failedHealth = await request(app, `/api/agents/${secretAgent.id}/test`, { method: "POST" });
+  assert.match(failedHealth.error, /\[REDACTED\]/);
+  assert.equal(failedHealth.error.includes(fakeSecret), false);
+  const posted = await post(app, "@Secret Failure fail safely", "secret-failure");
+  const failed = await waitForExecution(app, posted.executions[0].id, "failed");
+  assert.match(failed.error, /\[REDACTED\]/);
+  const persisted = await readFile(join(directory, "hub-state.json"), "utf8");
+  assert.equal(persisted.includes(fakeSecret), false);
+  const state = await request(app, "/api/state");
+  assert.equal(state.messages.some((message) => message.authorType === "error" && message.text.includes("[REDACTED]")), true);
+  assert.equal(state.messages.some((message) => message.text.includes(fakeSecret)), false);
 });

@@ -138,8 +138,11 @@ try {
   assert.deepEqual(await filesBelow(workspace), ["evidence.txt"]);
   assert.deepEqual(await filesBelow(control), ["agents.json", "hub-state.json", "outside-guard.txt"]);
   assert.equal(await readFile(guardPath, "utf8"), "No OpenCode task artifact may replace this file.\n");
-  assert.equal(Object.keys(definition).some((key) => /token|secret|password|credential|api.?key/i.test(key)), false);
   const persistedBefore = JSON.parse(await readFile(statePath, "utf8"));
+  const persistedDefinition = persistedBefore.agentDefinitions.find((agent) => agent.id === definition.id);
+  assert.ok(persistedDefinition, "OpenCode definition must persist in registry state");
+  assert.equal(Object.keys(persistedDefinition).some((key) => /token|secret|password|credential|api.?key/i.test(key)), false);
+  assert.equal(/github_pat_|gh[pousr]_|sk-[A-Za-z0-9_-]{8,}|Bearer\s+\S+/i.test(JSON.stringify({ definitions: persistedBefore.agentDefinitions, messages: persistedBefore.messages })), false);
   const sessionBefore = persistedBefore.agents.find((agent) => agent.id === definition.id)?.sessionId;
   assert.ok(sessionBefore, "OpenCode native session ID must persist");
 
@@ -156,7 +159,7 @@ try {
   const persistedAfter = JSON.parse(await readFile(statePath, "utf8"));
   assert.equal(persistedAfter.agents.find((agent) => agent.id === definition.id)?.sessionId, sessionBefore);
   assert.deepEqual(await filesBelow(workspace), ["evidence.txt"]);
-  assert.deepEqual(await filesBelow(control), ["agents.json", "hub-state.json", "outside-guard.txt"]);
+  assert.deepEqual(await filesBelow(control), ["agents.json", "hub-state.json", "hub-state.json.load-backup", "outside-guard.txt"]);
   assert.equal(await readFile(guardPath, "utf8"), "No OpenCode task artifact may replace this file.\n");
 
   const report = {

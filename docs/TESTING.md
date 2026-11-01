@@ -31,7 +31,7 @@ npm run test:ui  # requires macOS and Google Chrome
 npm run test:opencode  # separate live gate; uses existing OpenCode provider auth
 ```
 
-The browser command starts an isolated temporary server on a random port, uses separate runtime state, exercises real desktop and phone-width interactions, writes screenshots and a report under `artifacts/ui-validation/`, and stops its temporary processes. It does not replace the persistent service or modify its state.
+The browser command starts an isolated temporary server on a random port, uses separate runtime state, exercises real desktop and phone-width interactions, writes screenshots and a report under `artifacts/ui-validation/`, and stops its temporary processes. It does not replace the persistent service or modify its state. GitHub Actions runs `npm run check` and `npm test` for every pull request and push to `main`; browser and live provider tests remain local acceptance gates.
 
 The integration tests verify:
 
@@ -45,10 +45,14 @@ The integration tests verify:
 - Confirmed disposable-room deletion with message, execution, and idempotency-receipt cleanup.
 - Persisted queued → running → completed execution history and reply-message links.
 - Available, unavailable, misconfigured, disabled, and untested connectivity health.
-- Non-secret OpenCode registration validation and configuration preservation.
+- Explicit, unique OpenCode workspaces and non-secret registration/configuration preservation.
+- Two nonexistent-CLI connectivity attempts returning `misconfigured` without terminating the Hub.
+- Foreign Origin and Host headers rejected before execution, non-JSON mutations rejected, and same-origin JSON work still accepted.
+- Malformed state aborting startup while leaving the original bytes unchanged; valid state creates a load backup before recovery writes.
+- Fake provider secrets in stderr redacted from health, execution errors, room messages, and persisted state.
 - Five concurrent posts with one idempotency key producing one message and one execution.
 - Per-agent queue ordering, including work that remains queued behind a slow turn.
-- Queued and active stop with no stopped reply, resource cleanup, and successful subsequent work.
+- Queued and active fake stop with no stopped reply, resource cleanup, and successful subsequent work; real OpenCode stop/failure supervision remains incomplete.
 - One known-safe fail-once retry with attempt linkage; interrupted and unknown outcomes cannot be retried.
 - Non-global room deletion blocked while its execution is active.
 - Unfinished executions recovered as `unknown` after restart without automatic reruns or extra messages.
@@ -138,7 +142,8 @@ Each fake workspace contains `execution-proof.json`, `last-prompt.txt`, and `eve
 - The node named `demo-dell` runs on the current Mac. It proves transport and execution separation, not execution on the physical Dell.
 - OpenCode is the only real adapter. DSH, Hermes, and Grok adapters are not implemented.
 - Waiting/question states, reusable teams, agent-to-agent delegation, approvals, attachments, generated-file return, rich tool-call rendering, and remote tool arbitration are not implemented.
-- Safe retry is limited to explicit pre-execution failures; interrupted and unknown outcomes require reconciliation rather than automatic resubmission.
+- Safe retry is limited to explicit pre-execution failures; interrupted and unknown outcomes require reconciliation rather than automatic resubmission. Real OpenCode cancellation, descendant cleanup, provider failure, and post-interruption recovery are not yet proven.
 - OpenCode workspace acceptance is not an OS-level sandbox. Broader permission mediation and containment remain security work.
+- The remote-ACP demo uses authenticated raw TCP on loopback. Physical-machine deployment requires protected Tailscale transport or TLS and explicit binding rules in M4.
 - The server is loopback-only by default and has no network user authentication. Tailscale/phone exposure requires an access-control design first.
 - This is a development proof of concept, not a production-hardened deployment.

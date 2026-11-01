@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { redactError } from "./redact.mjs";
 
 export class AcpClient {
   constructor({ command, args, env = {}, cwd, requestTimeoutMs = 120_000 }) {
@@ -16,29 +17,46 @@ export class AcpClient {
     this.startPromise = null;
   }
 
+  #rejectPending(error) {
+    for (const { reject, timer } of this.pending.values()) {
+      clearTimeout(timer);
+      reject(error);
+    }
+    this.pending.clear();
+  }
+
   async start() {
     if (this.startPromise) return this.startPromise;
     this.startPromise = (async () => {
-      this.child = spawn(this.command, this.args, {
+      const child = spawn(this.command, this.args, {
         cwd: this.cwd,
         env: { ...process.env, ...this.env },
         stdio: ["pipe", "pipe", "pipe"],
       });
-      this.child.stderr.on("data", (chunk) => {
-        this.stderr = `${this.stderr}${chunk.toString("utf8")}`.slice(-16_000);
+      this.child = child;
+      child.stderr.on("data", (chunk) => {
+        this.stderr = redactError(`${this.stderr}${chunk.toString("utf8")}`).slice(-16_000);
       });
-      this.child.stdout.on("data", (chunk) => this.#consume(chunk));
-      this.child.once("exit", (code) => {
-        for (const { reject } of this.pending.values()) {
-          reject(new Error(`ACP process exited (${code}): ${this.stderr}`));
-        }
-        this.pending.clear();
-        this.child = null;
+      child.stdout.on("data", (chunk) => this.#consume(chunk));
+      child.once("error", (cause) => {
+        this.#rejectPending(new Error(`ACP process failed: ${redactError(cause.message)}`));
+      });
+      child.stdin.once("error", (cause) => {
+        this.#rejectPending(new Error(`ACP input failed: ${redactError(cause.message)}`));
+      });
+      child.once("exit", (code) => {
+        this.#rejectPending(new Error(`ACP process exited (${code}): ${this.stderr}`));
+        if (this.child === child) this.child = null;
         this.startPromise = null;
       });
       await this.request("initialize", { protocolVersion: 1, clientCapabilities: {} });
     })();
-    return this.startPromise;
+    try {
+      await this.startPromise;
+    } catch (error) {
+      await this.stop();
+      throw error;
+    }
   }
 
   #consume(chunk) {
@@ -60,7 +78,7 @@ export class AcpClient {
         this.pending.delete(message.id);
         clearTimeout(pending.timer);
         if (message.error) {
-          const error = new Error(`${message.error.code}: ${message.error.message}`);
+          const error = new Error(redactError(`${message.error.code}: ${message.error.message}`));
           error.retrySafe = message.error.code === -32010;
           pending.reject(error);
         } else pending.resolve(message.result);
@@ -76,7 +94,7 @@ export class AcpClient {
     const promise = new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
-        reject(new Error(`${method} timed out: ${this.stderr}`));
+        reject(new Error(redactError(`${method} timed out: ${this.stderr}`)));
       }, this.requestTimeoutMs);
       this.pending.set(id, { resolve, reject, timer });
     });
@@ -112,10 +130,22 @@ export class AcpClient {
   }
 
   async stop() {
-    if (!this.child) return;
     const child = this.child;
+    this.child = null;
+    this.startPromise = null;
+    if (!child || !child.pid || child.exitCode !== null || child.signalCode !== null) return;
     const exited = new Promise((resolve) => child.once("exit", resolve));
     child.kill("SIGTERM");
-    await exited;
+    let timer;
+    await Promise.race([
+      exited,
+      new Promise((resolve) => {
+        timer = setTimeout(() => {
+          if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+          resolve();
+        }, 2_000);
+      }),
+    ]);
+    clearTimeout(timer);
   }
 }

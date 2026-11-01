@@ -1,7 +1,8 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { copyFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { AgentRuntime } from "./agent-runtime.mjs";
+import { redactError } from "./redact.mjs";
 
 const MAX_TURNS_PER_REQUEST = 6;
 const COLORS = new Set(["yellow", "pink", "lavender"]);
@@ -57,7 +58,13 @@ export class Hub {
     let saved = null;
     try {
       saved = JSON.parse(await readFile(this.statePath, "utf8"));
-    } catch {}
+      if (!saved || typeof saved !== "object" || Array.isArray(saved)) throw new Error("Hub state must be a JSON object.");
+      await copyFile(this.statePath, `${this.statePath}.load-backup`);
+    } catch (error) {
+      if (error.code !== "ENOENT") {
+        throw new Error(`Hub state could not be loaded; the original file was left unchanged: ${redactError(error.message)}`);
+      }
+    }
     const seededAgents = this.configuredAgents ?? defaultAgents();
     const definitions = saved?.agentDefinitions ?? seededAgents;
     const savedRooms = Array.isArray(saved?.rooms) && saved.rooms.length ? saved.rooms : [saved?.room ?? armyRoom()];
@@ -274,7 +281,7 @@ export class Hub {
       name,
       nodeId,
       transport,
-      centralWorkspace: clean(input.centralWorkspace, existing?.centralWorkspace ?? "runtime/hub/central"),
+      centralWorkspace: clean(input.centralWorkspace, existing?.centralWorkspace ?? (transport === "local-opencode" ? "" : "runtime/hub/central")),
       color,
       enabled: typeof input.enabled === "boolean" ? input.enabled : existing?.enabled ?? true,
     };
@@ -283,7 +290,7 @@ export class Hub {
       if (!agent.config) throw problem("Remote ACP agents require a connector config path.");
     } else if (transport === "local-opencode") {
       agent.command = clean(input.command, existing?.command);
-      if (!agent.command || !agent.centralWorkspace) throw problem("OpenCode agents require a CLI path and workspace.");
+      if (!agent.command || !agent.centralWorkspace) throw problem("OpenCode agents require an explicit CLI path and workspace.");
     } else {
       agent.workspace = clean(input.workspace, existing?.workspace);
       agent.state = clean(input.state, existing?.state);
@@ -295,6 +302,11 @@ export class Hub {
   assertUniqueAgentName(agent) {
     if (this.state.agentDefinitions.some((candidate) => candidate.id !== agent.id && candidate.name.toLowerCase() === agent.name.toLowerCase())) {
       throw problem("An agent with that name already exists.", 409);
+    }
+    if (agent.transport === "local-opencode") {
+      const workspace = resolve(this.root, agent.centralWorkspace);
+      const duplicate = this.state.agentDefinitions.some((candidate) => candidate.id !== agent.id && candidate.transport === "local-opencode" && resolve(this.root, candidate.centralWorkspace) === workspace);
+      if (duplicate) throw problem("Another OpenCode agent already owns that workspace.", 409);
     }
   }
 
@@ -355,8 +367,9 @@ export class Hub {
       await this.runtime.test(agentId);
       session.health = { status: "available", checkedAt: new Date().toISOString(), error: null };
     } catch (error) {
-      const status = /config|credential|token|required|ENOENT/i.test(error.message) ? "misconfigured" : "unavailable";
-      session.health = { status, checkedAt: new Date().toISOString(), error: error.message };
+      const message = redactError(error.message);
+      const status = /config|credential|token|required|ENOENT|failed/i.test(message) ? "misconfigured" : "unavailable";
+      session.health = { status, checkedAt: new Date().toISOString(), error: message };
     }
     await this.save();
     this.emit("change");
@@ -474,6 +487,7 @@ export class Hub {
       this.emit("change");
     } catch (error) {
       if (!["queued", "running"].includes(execution.status)) return execution;
+      const message = redactError(error.message);
       const reply = {
         id: randomUUID(),
         roomId: execution.roomId,
@@ -482,12 +496,12 @@ export class Hub {
         authorName: agent?.name ?? execution.agentId,
         nodeId: agent?.nodeId,
         originId: execution.originId,
-        text: `Execution failed: ${error.message}`,
+        text: `Execution failed: ${message}`,
         createdAt: new Date().toISOString(),
       };
       this.state.messages.push(reply);
       execution.retrySafe = error.retrySafe === true;
-      this.transitionExecution(execution, "failed", { error: error.message, resultMessageId: reply.id });
+      this.transitionExecution(execution, "failed", { error: message, resultMessageId: reply.id });
       await this.save();
       this.emit("change");
     }

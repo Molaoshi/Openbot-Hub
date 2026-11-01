@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { dirname, extname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Hub } from "./hub.mjs";
+import { redactError } from "./redact.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const webRoot = resolve(root, "web");
@@ -35,6 +36,8 @@ const json = (response, status, value) => {
   response.end(JSON.stringify(value));
 };
 const body = async (request) => {
+  const contentType = request.headers["content-type"]?.split(";", 1)[0].trim().toLowerCase();
+  if (contentType !== "application/json") throw Object.assign(new Error("JSON content type is required."), { status: 415 });
   let text = "";
   for await (const chunk of request) {
     text += chunk;
@@ -45,7 +48,21 @@ const body = async (request) => {
 
 const server = http.createServer(async (request, response) => {
   try {
-    const url = new URL(request.url, `http://${request.headers.host ?? "localhost"}`);
+    if (!request.headers.host) throw Object.assign(new Error("Host header is required."), { status: 403 });
+    const url = new URL(request.url, `http://${request.headers.host}`);
+    if (!new Set(["127.0.0.1", "localhost", "[::1]"]).has(url.hostname)) {
+      throw Object.assign(new Error("Foreign Host headers are not allowed."), { status: 403 });
+    }
+    if (request.headers["sec-fetch-site"] === "cross-site") {
+      throw Object.assign(new Error("Cross-site requests are not allowed."), { status: 403 });
+    }
+    if (request.headers.origin) {
+      let origin;
+      try { origin = new URL(request.headers.origin).origin; } catch { origin = null; }
+      if (origin !== `http://${request.headers.host}`) {
+        throw Object.assign(new Error("Cross-origin requests are not allowed."), { status: 403 });
+      }
+    }
     if (url.pathname === "/api/state" && request.method === "GET") return json(response, 200, hub.snapshot());
     if (url.pathname === "/api/health" && request.method === "GET") {
       return json(response, 200, { ok: true, product: "OpenBot Hub", accounts: false, externalAnalytics: false });
@@ -111,7 +128,7 @@ const server = http.createServer(async (request, response) => {
     });
     response.end(content);
   } catch (error) {
-    json(response, error.status ?? (error.code === "ENOENT" ? 404 : 500), { error: error.message });
+    json(response, error.status ?? (error.code === "ENOENT" ? 404 : 500), { error: redactError(error.message) });
   }
 });
 server.listen(port, host, () => {

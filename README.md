@@ -80,7 +80,7 @@ npm run test:ui  # macOS + Google Chrome
 npm run test:opencode  # real provider calls; separate live gate
 ```
 
-The offline tests cover remote ACP execution, workspace proof, session resume, credential rejection, connectivity health, OpenCode registration validation, concurrent idempotency, per-agent queue order, queued/active stop, known-safe retry, unknown-outcome recovery, room lifecycle safeguards, and persistence across restart. The UI command runs isolated desktop and 390 px phone acceptance flows, including OpenCode form behavior, connectivity, supervision, and room editing/deletion controls.
+The offline tests cover remote ACP execution, workspace proof, session resume, credential rejection, connectivity health, OpenCode registration validation, concurrent idempotency, per-agent queue order, queued/active fake stop, known-safe retry, unknown-outcome recovery, room lifecycle safeguards, and persistence across restart. Hardening regressions also cover nonexistent executables, foreign Origin/Host requests, non-JSON mutations, malformed-state preservation, unique workspaces, and provider-stderr redaction. GitHub Actions runs syntax and offline tests for every PR and push to `main`; browser and live provider acceptance remain local gates.
 
 ## Product plan
 
@@ -89,7 +89,7 @@ The offline tests cover remote ACP execution, workspace proof, session resume, c
 - [Requirements matrix](docs/requirements-matrix.md) — status and acceptance evidence for every requirement.
 - [Testing instructions](docs/TESTING.md) — manual checks and current limitations.
 
-**M1 is complete. M2 is active:** the real OpenCode adapter and native file/session acceptance have landed; approvals, rich progress, attachments, generated-file return, and the remaining M2 exit gate are still open. Feature changes must reference requirement IDs and update the matrix.
+**M1 is complete for its original fake-agent scope. M2 is active:** the real OpenCode adapter and native file/session acceptance have landed; real-agent stop/failure supervision, approvals, rich progress, attachments, generated-file return, and the remaining M2 exit gate are still open. Feature changes must reference requirement IDs and update the matrix.
 
 ## Source layout
 
@@ -112,4 +112,4 @@ docs/                    Architecture and acceptance plans
 - Physical Dell/MacBook enrollment and secure phone access remain deployment work.
 - Upstream OpenBot code is not bundled in the runnable app. Any future copied or modified upstream code must retain its PolyForm Noncommercial 1.0.0 notices.
 
-GitHub remote: `https://github.com/Molaoshi/Openbot-Hub.git`. The repository-local credential helper uses the `openbot-hub-github-pat` macOS Keychain entry; tokens and runtime files remain ignored.
+GitHub remote: `https://github.com/Molaoshi/Openbot-Hub.git`. The repository-local credential helper uses the `openbot-hub-write-pat` macOS Keychain entry; tokens and runtime files remain ignored.
