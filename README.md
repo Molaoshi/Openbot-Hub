@@ -54,22 +54,24 @@ Service logs are written to `runtime/openbot-hub.out.log` and `runtime/openbot-h
 - Disabled agents cannot execute. Removing an agent preserves its message history.
 - Select **+ NEW** in the room panel to create a project room and choose its members.
 - Use the header pencil to rename a project room, edit its purpose or membership, or delete its history with confirmation. Army permits purpose edits only.
-- Execution cards show applicable queued, running, completed, failed, interrupted, and unknown states. Stop queued/active work or retry only known-safe pre-execution failures.
+- Execution cards show queued, running, waiting, completed, failed, interrupted, and unknown states. Stop queued/active work or retry only known-safe pre-execution failures.
+- Harness questions and permission requests appear on their execution card. Approving or rejecting returns the decision to the same native session; expiry, stopping, and restart leave explicit terminal records rather than pending work.
 - The Army room always includes every enabled agent. In project rooms, `@everyone` includes only enabled members.
 
 Remote-ACP registration references a connector config file; connector tokens remain in separate owner-only files. OpenCode uses its own existing provider profile. Neither connector credentials nor provider credentials are entered into the agent registry, prompts, message history, or Git.
 
 ## Real OpenCode acceptance
 
-The separate live acceptance command uses the installed OpenCode CLI and its existing provider authentication. It makes two small real model calls, starts an isolated Hub on a random port, creates a native file in a disposable workspace, restarts the Hub, verifies native session recall, checks execution identity and workspace-only task artifacts, and removes the disposable directory.
+The separate live acceptance commands use the installed OpenCode CLI and its existing provider authentication. The base gate makes two small real model calls, creates a native file in a disposable workspace, restarts the Hub, verifies native session recall, checks execution identity and workspace-only task artifacts, and removes the disposable directory. The supervision gate makes four small calls and proves native permission approval, active stop and descendant cleanup, provider-crash failure and cleanup, and successful recovery in the same native session.
 
 ```sh
 npm run test:opencode
+npm run test:opencode-supervision
 # Override the CLI location when needed:
-OPENCODE_CLI=/full/path/to/opencode-cli npm run test:opencode
+OPENCODE_CLI=/full/path/to/opencode-cli npm run test:opencode-supervision
 ```
 
-On this Mac, the default CLI is `~/Library/Application Support/ai.opencode.desktop/cli/2.0.26/opencode-cli`. The live test is intentionally separate from offline `npm test`; its report is written to `artifacts/opencode-acceptance/report.json`.
+On this Mac, the default CLI is `~/Library/Application Support/ai.opencode.desktop/cli/2.0.26/opencode-cli`. Live tests are intentionally separate from offline `npm test`; reports are written under `artifacts/opencode-acceptance/` and `artifacts/opencode-supervision/`.
 
 ## Verify
 
@@ -78,9 +80,10 @@ npm run check
 npm test
 npm run test:ui  # macOS + Google Chrome
 npm run test:opencode  # real provider calls; separate live gate
+npm run test:opencode-supervision  # four-call real supervision gate
 ```
 
-The offline tests cover remote ACP execution, workspace proof, session resume, credential rejection, connectivity health, OpenCode registration validation, concurrent idempotency, per-agent queue order, queued/active fake stop, known-safe retry, unknown-outcome recovery, room lifecycle safeguards, and persistence across restart. Hardening regressions also cover nonexistent executables, foreign Origin/Host requests, non-JSON mutations, malformed-state preservation, unique workspaces, and provider-stderr redaction. GitHub Actions runs syntax and offline tests for every PR and push to `main`; browser and live provider acceptance remain local gates.
+The offline tests cover remote ACP execution, workspace proof, session resume, credential rejection, connectivity health, OpenCode registration validation, concurrent idempotency, per-agent queue order, queued/active stop, process-group cleanup, known-safe retry, unknown-outcome recovery, room lifecycle safeguards, and persistence across restart. Approval coverage includes questions, permission allow/reject, wrong-session rejection, invalid and repeated decisions, expiry, waiting stop, active-modification guards, and restart recovery. Hardening regressions also cover nonexistent executables, foreign Origin/Host requests, non-JSON mutations, malformed-state preservation, unique workspaces, and provider-stderr redaction. GitHub Actions runs syntax and offline tests for every PR and push to `main`; browser and live provider acceptance remain local gates.
 
 ## Product plan
 
@@ -89,7 +92,7 @@ The offline tests cover remote ACP execution, workspace proof, session resume, c
 - [Requirements matrix](docs/requirements-matrix.md) — status and acceptance evidence for every requirement.
 - [Testing instructions](docs/TESTING.md) — manual checks and current limitations.
 
-**M1 is complete for its original fake-agent scope. M2 is active:** the real OpenCode adapter and native file/session acceptance have landed; real-agent stop/failure supervision, approvals, rich progress, attachments, generated-file return, and the remaining M2 exit gate are still open. Feature changes must reference requirement IDs and update the matrix.
+**M1 is complete. M2 is active:** the real OpenCode adapter, native file/session acceptance, real-agent stop/failure supervision, and room-bound approvals have landed; rich progress, attachments, generated-file return, and the remaining M2 exit gate are still open. Feature changes must reference requirement IDs and update the matrix.
 
 ## Source layout
 

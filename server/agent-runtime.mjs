@@ -3,13 +3,15 @@ import { resolve } from "node:path";
 import { AcpClient } from "./acp-client.mjs";
 
 export class AgentRuntime {
-  constructor({ root, agents, onSession }) {
+  constructor({ root, agents, onSession, onRequest }) {
     this.root = root;
     this.agents = agents;
     this.onSession = onSession;
+    this.onRequest = onRequest;
     this.clients = new Map();
     this.queues = new Map();
     this.cancellations = new Set();
+    this.active = new Map();
   }
 
   definition(agentId) {
@@ -51,8 +53,16 @@ export class AgentRuntime {
         },
       });
     }
+    client.onRequest = (params) => this.handleRequest(agent.id, params);
     this.clients.set(agent.id, client);
     return client;
+  }
+
+  async handleRequest(agentId, params) {
+    const active = this.active.get(agentId);
+    if (!active || active.sessionId !== params.sessionId) throw new Error("Permission request does not match the active execution session.");
+    if (!this.onRequest) throw new Error("This Hub does not accept permission requests.");
+    return this.onRequest({ agentId, executionId: active.executionId, sessionId: active.sessionId, params });
   }
 
   run(agentId, sessionId, text, { executionId, onStart = async () => {} } = {}) {
@@ -67,7 +77,12 @@ export class AgentRuntime {
       const client = this.client(agent);
       const actualSession = await client.ensureSession(sessionId, centralWorkspace);
       if (actualSession !== sessionId) await this.onSession(agentId, actualSession);
-      return client.prompt(actualSession, text);
+      this.active.set(agentId, { executionId, sessionId: actualSession });
+      try {
+        return await client.prompt(actualSession, text);
+      } finally {
+        this.active.delete(agentId);
+      }
     });
     this.queues.set(agentId, next.catch(() => {}));
     return next.finally(() => this.cancellations.delete(executionId));

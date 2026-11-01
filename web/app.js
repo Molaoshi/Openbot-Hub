@@ -7,7 +7,7 @@ const roomList = document.querySelector("#room-list");
 const mentionRow = document.querySelector("#mention-row");
 const connectionState = document.querySelector("#connection-state");
 const toast = document.querySelector("#toast");
-let state = { rooms: [], agents: [], messages: [], executions: [] };
+let state = { rooms: [], agents: [], messages: [], executions: [], approvals: [] };
 let currentRoomId = "army";
 try { currentRoomId = localStorage.getItem("openbot-hub.room") || "army"; } catch {}
 let toastTimer;
@@ -125,6 +125,43 @@ function executionCard(execution) {
   }
   card.append(identity, status, controls);
   if (execution.error) card.append(element("div", "execution-error", execution.error));
+  for (const approval of state.approvals.filter((candidate) => candidate.executionId === execution.id)) {
+    const decision = element("div", "approval-card");
+    decision.dataset.approvalId = approval.id;
+    decision.dataset.status = approval.status;
+    decision.append(element("strong", "", approval.title));
+    const selected = approval.options.find((option) => option.id === approval.selectedOptionId);
+    const detail = approval.status === "pending"
+      ? "Waiting for Mo · no further action until you decide"
+      : `${approval.status.toUpperCase()}${selected ? ` · ${selected.label}` : ""}`;
+    decision.append(element("span", "approval-meta", detail));
+    if (approval.status === "pending") {
+      const options = element("div", "approval-options");
+      for (const option of approval.options) {
+        const button = element("button", "execution-action approval-option", option.label);
+        button.type = "button";
+        button.dataset.optionId = option.id;
+        button.addEventListener("click", async () => {
+          for (const candidate of options.querySelectorAll("button")) candidate.disabled = true;
+          try {
+            await api(`/api/approvals/${encodeURIComponent(approval.id)}`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ optionId: option.id }),
+            });
+            await refresh();
+            showToast("Decision returned to the same agent session.");
+          } catch (error) {
+            showToast(error.message);
+            for (const candidate of options.querySelectorAll("button")) candidate.disabled = false;
+          }
+        });
+        options.append(button);
+      }
+      decision.append(options);
+    } else if (approval.error) decision.append(element("span", "approval-meta", approval.error));
+    card.append(decision);
+  }
   return card;
 }
 

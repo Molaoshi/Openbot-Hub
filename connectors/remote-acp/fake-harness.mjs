@@ -25,6 +25,32 @@ const say = (sessionId, text) => update(sessionId, {
   sessionUpdate: "agent_message_chunk",
   content: { type: "text", text },
 });
+const decisions = new Map();
+let nextDecisionId = 1;
+
+function requestDecision(sessionId, text) {
+  const id = `decision-${nextDecisionId++}`;
+  const question = text.includes("question");
+  const promise = new Promise((resolve, reject) => decisions.set(id, { resolve, reject }));
+  write({
+    id,
+    method: "session/request_permission",
+    params: {
+      sessionId: text.includes("wrong-session") ? "wrong-native-session" : sessionId,
+      toolCall: {
+        toolCallId: id,
+        title: question ? "Choose how this task should continue" : "Approve the requested workspace operation",
+        kind: question ? "think" : "execute",
+        status: "pending",
+      },
+      options: [
+        { optionId: "allow_once", name: question ? "Proceed with the proposed step" : "Allow once", kind: "allow_once" },
+        { optionId: "reject_once", name: question ? "Stop at this step" : "Reject once", kind: "reject_once" },
+      ],
+    },
+  });
+  return promise;
+}
 
 function loadSession(id) {
   try {
@@ -110,13 +136,20 @@ const handlers = {
       `Received: ${text || "(empty prompt)"}`,
       "This is a deterministic offline response; no model or paid API call was made.",
     ].join("\n");
-    const finish = () => {
-      say(session.id, answer);
-      record(session, "agent_message_chunk", answer);
-      reply(request, { stopReason: "end_turn" });
+    const finish = (accepted = true) => {
+      const finalAnswer = accepted ? answer : "The proposed step was rejected; no further action was taken.";
+      say(session.id, finalAnswer);
+      record(session, "agent_message_chunk", finalAnswer);
+      reply(request, { stopReason: accepted ? "end_turn" : "refusal" });
     };
+    if (/\b(approval|question)\b/.test(text)) {
+      requestDecision(session.id, text)
+        .then((result) => finish(result.outcome?.outcome === "selected" && result.outcome.optionId === "allow_once"))
+        .catch((error) => fail(request, -32000, error.message));
+      return;
+    }
     const delay = Number(text.match(/\bslow:(\d+)\b/)?.[1] ?? 0);
-    if (delay > 0) setTimeout(finish, Math.min(delay, 30_000));
+    if (delay > 0) setTimeout(() => finish(), Math.min(delay, 30_000));
     else finish();
   },
 };
@@ -133,6 +166,13 @@ process.stdin.on("data", (chunk) => {
     try {
       request = JSON.parse(line);
     } catch {
+      continue;
+    }
+    if (request.id !== undefined && typeof request.method !== "string") {
+      const decision = decisions.get(request.id);
+      decisions.delete(request.id);
+      if (request.error) decision?.reject(new Error(request.error.message));
+      else decision?.resolve(request.result);
       continue;
     }
     if (request.id === undefined || typeof request.method !== "string") continue;

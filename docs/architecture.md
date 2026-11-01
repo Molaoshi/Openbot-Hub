@@ -51,11 +51,12 @@ Owns:
 - Project-room rename, purpose/membership editing, and confirmed history deletion.
 - Persistent agent definitions and references to their harness sessions.
 - Per-agent execution queues and persisted supervision records.
+- Room-bound ACP permission requests with pending, approved, rejected, expired, and interrupted decision records.
 - Direct mentions, room-scoped `@everyone`, idempotent user-post receipts, and a six-turn request limit.
 - Live browser updates over server-sent events.
 - Host-independent agent addressing.
 
-It does not yet own approvals, attachment replication, autonomous delegation, or reusable teams.
+It does not yet own attachment replication, autonomous delegation, or reusable teams.
 
 ### Execution-node connector
 
@@ -101,16 +102,20 @@ The Army room is global and always addresses every enabled agent. Project rooms 
 4. Each selected agent enters its own serial queue.
 5. The runtime creates or resumes the agent's durable ACP session.
 6. Local agents execute directly; remote agents pass through the authenticated node connector.
-7. Replies return to the originating room with author, origin, and execution-node identity.
-8. Saved session IDs are reused after application restart.
+7. ACP `session/request_permission` requests pause the execution as `waiting` and appear in the originating room. Mo's selected option resumes the same native session; rejection, expiry, stop, and provider failure produce explicit terminal records.
+8. Replies return to the originating room with author, origin, and execution-node identity.
+9. Saved session IDs are reused after application restart.
 
-A repeated client message ID returns the original receipt and starts no new execution. Automatic recovery of an interrupted active turn is not implemented and must not be assumed safe. Fake-agent stop/retry evidence is complete; real OpenCode cancellation and failure supervision remain partial.
+A repeated client message ID returns the original receipt and starts no new execution. Automatic recovery of an interrupted active turn is not implemented and must not be assumed safe. Real OpenCode acceptance covers permission approval, active stop, provider-crash failure, descendant cleanup, and subsequent execution in the same native session.
 
 ## State and failure rules
 
 - A missing state file seeds a new demo; an unreadable, malformed, or non-object state file aborts startup without replacing the original.
 - Loading a valid existing state creates a `.load-backup` copy before the Hub writes its recovered representation.
 - ACP spawn/stream failures reject pending work and reset startup state rather than terminating the Node process.
+- Manual stops and unexpected provider exits clean up the ACP process tree; subsequent work starts a fresh ACP process without creating a second native session.
+- Permission decisions are bound to the exact execution and native session. Pending decisions cannot be answered twice, answered with an invented option, or resumed after stop, expiry, provider failure, or restart.
+- Active agents cannot be edited or removed; room deletion removes that room's execution and approval history only after active work stops.
 - Provider and connector errors are redacted before health records, execution history, room messages, or HTTP responses persist or display them.
 
 ## Workspace and tool rules
@@ -139,6 +144,8 @@ Implemented and tested:
 - Node-tagged replies and execution evidence.
 - Room-scoped `@everyone`, duplicate-post suppression, supervision, and restart recovery.
 - Real OpenCode native file and post-restart session-recall acceptance.
+- Real OpenCode permission, active-stop, provider-failure, descendant-cleanup, and post-failure recovery acceptance.
+- Room-bound approval/rejection controls on desktop and at 390 px.
 - Desktop and 390 px mobile chat, drawer, management-form, and OpenCode-form acceptance.
 
 Not yet implemented:
@@ -146,5 +153,5 @@ Not yet implemented:
 - Reusable teams and controlled delegation.
 - Physical Dell and MacBook enrollment.
 - DSH, Hermes, or Grok adapters.
-- Approvals, attachments, generated-file return, and rich tool rendering.
-- Real OpenCode stop/failure supervision, network user authentication, and production hardening.
+- Attachments, generated-file return, and rich tool rendering.
+- Network user authentication and production hardening.

@@ -18,9 +18,11 @@ const host = option("host", "127.0.0.1");
 const port = Number(option("port", "7100"));
 const statePath = resolve(root, option("state", "runtime/hub/state.json"));
 const agentsPath = option("agents", null);
+const approvalTimeoutMs = Number(option("approval-timeout-ms", "120000"));
+if (!Number.isFinite(approvalTimeoutMs) || approvalTimeoutMs < 100) throw new Error("Approval timeout must be at least 100 ms.");
 const agents = agentsPath ? JSON.parse(await readFile(resolve(root, agentsPath), "utf8")) : null;
 if (agents !== null && !Array.isArray(agents)) throw new Error("Agent configuration must be a JSON array.");
-const hub = new Hub({ root, statePath, agents });
+const hub = new Hub({ root, statePath, agents, approvalTimeoutMs });
 await hub.load();
 
 const mime = {
@@ -92,6 +94,11 @@ const server = http.createServer(async (request, response) => {
       const executionId = decodeURIComponent(executionMatch[1]);
       if (executionMatch[2] === "stop") return json(response, 200, await hub.stopExecution(executionId));
       return json(response, 202, await hub.retryExecution(executionId));
+    }
+    const approvalMatch = url.pathname.match(/^\/api\/approvals\/([^/]+)$/);
+    if (approvalMatch && request.method === "POST") {
+      const input = await body(request);
+      return json(response, 200, await hub.respondApproval(decodeURIComponent(approvalMatch[1]), input.optionId));
     }
     const agentMatch = url.pathname.match(/^\/api\/agents\/([^/]+)$/);
     if (agentMatch && request.method === "PATCH") {

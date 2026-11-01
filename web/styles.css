@@ -120,6 +120,12 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 .execution-action:hover { background: var(--yellow); }
 .execution-action:disabled { opacity: .45; cursor: wait; }
 .execution-error { grid-column: 1 / -1; color: var(--muted); overflow-wrap: anywhere; }
+.approval-card { grid-column: 1 / -1; display: grid; gap: 7px; border-top: 1px solid var(--line); padding-top: 10px; }
+.approval-card > strong { font-size: 12px; line-height: 1.45; }
+.approval-meta { color: var(--muted); font-family: var(--mono); font-size: 9px; line-height: 1.5; }
+.approval-options { display: flex; flex-wrap: wrap; gap: 7px; }
+.approval-option[data-option-id="allow_once"] { background: var(--yellow); }
+.approval-option[data-option-id="reject_once"] { background: var(--pink); }
 .proof-note { background: var(--light-yellow); border-radius: 16px; padding: 16px; margin-top: 24px; }
 .proof-note p { font-size: 12px; line-height: 1.55; margin: 8px 0 0; }
 .protocol-note { color: var(--muted); margin-top: 24px; line-height: 1.8; }

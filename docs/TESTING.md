@@ -13,13 +13,14 @@ The repository contains a runnable, account-free application with:
 - Workspace selection and execution-proof evidence.
 - Idempotent client message posting.
 - Persistent per-recipient execution records with lifecycle history and result links.
-- Execution cards with queued/active stop and known-safe retry controls.
+- Execution cards with queued/active/waiting stop and known-safe retry controls.
+- In-room question and permission choices with persistent pending/terminal approval records and same-session resume.
 - Connectivity checks with available, unavailable, misconfigured, disabled, and untested health.
 - Room rename, purpose/membership editing, and confirmed deletion in the UI and API.
-- Deterministic slow and fail-once fake work for supervision acceptance.
-- Offline connector/application integration tests and a separate live OpenCode acceptance script.
+- Deterministic slow, fail-once, question, approval, and wrong-session fake work for supervision acceptance.
+- Offline connector/application integration tests and separate live OpenCode file/session and supervision acceptance scripts.
 
-The offline demo and test suite require no upstream OpenBot installation, email address, vendor account, API key, model provider, or paid API call. The optional real OpenCode test uses the CLI's existing provider authentication and makes two small model calls; it does not use an OpenBot account or copy provider credentials into the Hub.
+The offline demo and test suite require no upstream OpenBot installation, email address, vendor account, API key, model provider, or paid API call. The optional real OpenCode tests use the CLI's existing provider authentication and make small model calls; they do not use an OpenBot account or copy provider credentials into the Hub.
 
 ## Run automated checks
 
@@ -28,10 +29,11 @@ cd /Users/immortalist/Documents/Kimi/Workspaces/MacServer/openbot-hub
 npm run check
 npm test
 npm run test:ui  # requires macOS and Google Chrome
-npm run test:opencode  # separate live gate; uses existing OpenCode provider auth
+npm run test:opencode  # live file/session gate; two small model calls
+npm run test:opencode-supervision  # live approval/stop/failure gate; four model calls
 ```
 
-The browser command starts an isolated temporary server on a random port, uses separate runtime state, exercises real desktop and phone-width interactions, writes screenshots and a report under `artifacts/ui-validation/`, and stops its temporary processes. It does not replace the persistent service or modify its state. GitHub Actions runs `npm run check` and `npm test` for every pull request and push to `main`; browser and live provider tests remain local acceptance gates.
+The browser command starts an isolated temporary server on a random port, uses separate runtime state, exercises real desktop and phone-width interactions including approval and rejection, writes screenshots and a report under `artifacts/ui-validation/`, and stops its temporary processes. It does not replace the persistent service or modify its state. GitHub Actions runs `npm run check` and `npm test` for every pull request and push to `main`; browser and live provider tests remain local acceptance gates.
 
 The integration tests verify:
 
@@ -52,21 +54,26 @@ The integration tests verify:
 - Fake provider secrets in stderr redacted from health, execution errors, room messages, and persisted state.
 - Five concurrent posts with one idempotency key producing one message and one execution.
 - Per-agent queue ordering, including work that remains queued behind a slow turn.
-- Queued and active fake stop with no stopped reply, resource cleanup, and successful subsequent work; real OpenCode stop/failure supervision remains incomplete.
+- Queued and active fake stop with no stopped reply, resource cleanup, and successful subsequent work.
+- ACP process-group cleanup and rejection of the in-flight prompt when active work stops.
 - One known-safe fail-once retry with attempt linkage; interrupted and unknown outcomes cannot be retried.
+- Question allow and permission reject round trips through `waiting → running`, with persisted terminal decisions and no repeated decisions.
+- Waiting stop, wrong-session rejection, approval expiry, active-agent modification guards, and safe restart recovery without pending work or automatic reruns.
 - Non-global room deletion blocked while its execution is active.
-- Unfinished executions recovered as `unknown` after restart without automatic reruns or extra messages.
+- Unfinished executions recovered as `unknown` after restart without automatic reruns or extra messages; pending approvals become `interrupted`.
 - Agent creation, renaming, disabling, re-enabling, session resume, and removal.
 - Preservation of message history after agent removal.
 - Duplicate-name rejection and unknown-room/member validation.
 - No duplicate message or execution when a `clientMessageId` is repeated.
-- Registry, room, conversation, execution, and session persistence after an application restart.
+- Registry, room, conversation, execution, approval, and session persistence after an application restart.
 
 ## Real OpenCode acceptance
 
-Run `npm run test:opencode`. Set `OPENCODE_CLI=/full/path/to/opencode-cli` when the installed CLI differs from this Mac's default `~/Library/Application Support/ai.opencode.desktop/cli/2.0.26/opencode-cli`.
+Set `OPENCODE_CLI=/full/path/to/opencode-cli` when the installed CLI differs from this Mac's default `~/Library/Application Support/ai.opencode.desktop/cli/2.0.26/opencode-cli`. Both scripts create isolated roots under ignored `.runtime/`, start the actual Hub API with one `local-opencode` agent, stop temporary app processes, and remove their disposable roots. Evidence covers task artifacts inside each isolated acceptance root; it is not an operating-system sandbox and does not prohibit OpenCode's own provider profile or native session storage elsewhere.
 
-The script creates an isolated root under ignored `.runtime/`, starts the actual Hub API with one `local-opencode` agent, and verifies:
+### Files and durable sessions
+
+Run `npm run test:opencode`. This makes two small model calls and verifies:
 
 1. Connectivity through real ACP initialization.
 2. A small live task creates `evidence.txt` with an exact random token and no additional workspace files.
@@ -74,9 +81,19 @@ The script creates an isolated root under ignored `.runtime/`, starts the actual
 4. No unexpected task artifacts appear in the control directory outside the disposable workspace, and an outside guard file remains unchanged.
 5. The registry definition contains no provider credential fields.
 6. After a full Hub restart, OpenCode loads the same native session and recalls the token without rereading the file.
-7. Temporary app processes stop and the disposable acceptance root is removed.
 
-The JSON report is written to `artifacts/opencode-acceptance/report.json`. This evidence covers task artifacts inside the isolated acceptance root. It is not an operating-system sandbox and does not prohibit OpenCode's own provider profile or native session storage elsewhere.
+The JSON report is written to `artifacts/opencode-acceptance/report.json`.
+
+### Approvals, stop, failure, and recovery
+
+Run `npm run test:opencode-supervision`. This makes four small model calls against a disposable OpenCode workspace whose bash permission is `ask`, and verifies:
+
+1. A native OpenCode permission request becomes one room-bound pending approval; allow-once resumes the same execution through `queued → running → waiting → running → completed` and produces the requested file.
+2. Stopping active real work marks it `interrupted` and cleans up the tool descendant process.
+3. An induced provider-process crash marks active work `failed`, not retry-safe, and cleans up its tool descendant process.
+4. A subsequent execution completes and recalls the original token through the same durable native OpenCode session.
+
+The JSON report is written to `artifacts/opencode-supervision/report.json`.
 
 ## Run the app
 
@@ -108,14 +125,18 @@ The launcher creates demo-only state under `runtime/`, generates a local connect
 6. Remove it and confirm its previous messages remain in the conversation.
 7. Restart the app and confirm registry changes persist.
 8. Open **+ ADD**, choose **OpenCode · real ACP**, and confirm only the CLI path and OpenCode workspace are additionally required. Use a full CLI path and a disposable workspace for a real agent.
+9. While an agent has queued, running, or waiting work, confirm its edit and remove actions are blocked until that work reaches a terminal state.
 
-### Execution supervision
+### Execution supervision and approvals
 
 1. Send `@Mini Fake slow:5000 test stop`; its execution card should become **RUNNING**.
 2. Send another Mini prompt while the slow turn is active; the second card should remain **QUEUED**. Stop it and confirm it becomes **INTERRUPTED** without a reply.
 3. Stop the active slow turn, confirm it becomes **INTERRUPTED**, then send a normal prompt and confirm the agent still executes.
 4. Send `@Mini Fake fail-once safe retry`. The first attempt should fail before execution and offer **Safe retry**.
 5. Select **Safe retry** and confirm a linked attempt 2 completes. The old retry button should disappear; interrupted or unknown records never offer retry.
+6. Send `@Mini Fake question before continuing`. Confirm the execution becomes **WAITING** and its choices appear in the room; allow it and confirm it resumes and completes with the terminal decision visible.
+7. Send `@Mini Fake approval before continuing`, reject the request, and confirm the same execution resumes and the reply records the rejection.
+8. Send another approval prompt and stop it while waiting. Confirm the execution becomes **INTERRUPTED**, the approval can no longer be decided, and a later normal prompt succeeds.
 
 ### Rooms and phone
 
@@ -127,6 +148,7 @@ The launcher creates demo-only state under `runtime/`, generates a local connect
 6. Switch between Army and a project room and confirm their transcripts remain separate.
 7. At a narrow viewport, open and close the room and agent drawers.
 8. Open the agent form at phone width and confirm its fields and actions fit the viewport.
+9. At phone width, allow one question and reject another approval; confirm the choices and resulting execution states remain usable without horizontal overflow.
 
 Fake execution evidence is written beneath the agent's configured workspace. Initial demo paths include:
 
@@ -135,14 +157,14 @@ runtime/hub/mini-workspace/
 runtime/demo/dell-workspace/dell-fake/
 ```
 
-Each fake workspace contains `execution-proof.json`, `last-prompt.txt`, and `events.jsonl` after execution. Real OpenCode evidence consists of native task artifacts in its configured workspace plus the Hub's durable execution and session records.
+Each fake workspace contains `execution-proof.json`, `last-prompt.txt`, and `events.jsonl` after execution. Real OpenCode evidence consists of native task artifacts in its configured workspace plus the Hub's durable execution, approval, and session records.
 
 ## Current limitations
 
 - The node named `demo-dell` runs on the current Mac. It proves transport and execution separation, not execution on the physical Dell.
 - OpenCode is the only real adapter. DSH, Hermes, and Grok adapters are not implemented.
-- Waiting/question states, reusable teams, agent-to-agent delegation, approvals, attachments, generated-file return, rich tool-call rendering, and remote tool arbitration are not implemented.
-- Safe retry is limited to explicit pre-execution failures; interrupted and unknown outcomes require reconciliation rather than automatic resubmission. Real OpenCode cancellation, descendant cleanup, provider failure, and post-interruption recovery are not yet proven.
+- Reusable teams, agent-to-agent delegation, attachments, generated-file return, rich tool-call rendering, and remote tool arbitration are not implemented.
+- Safe retry is limited to explicit pre-execution failures; interrupted and unknown outcomes require reconciliation rather than automatic resubmission. Real OpenCode active stop, descendant cleanup, one induced provider crash, and subsequent same-session recovery have passed the dedicated acceptance gate; broader provider, authentication, and usage-limit failures still require coverage.
 - OpenCode workspace acceptance is not an OS-level sandbox. Broader permission mediation and containment remain security work.
 - The remote-ACP demo uses authenticated raw TCP on loopback. Physical-machine deployment requires protected Tailscale transport or TLS and explicit binding rules in M4.
 - The server is loopback-only by default and has no network user authentication. Tailscale/phone exposure requires an access-control design first.
