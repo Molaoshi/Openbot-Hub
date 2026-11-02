@@ -163,7 +163,49 @@ try {
   await cdp.evaluate(`document.querySelector('.execution-card[data-status="running"] .stop-execution').click()`);
   await cdp.wait(`document.querySelector('.execution-card[data-status="interrupted"]')`);
   const stoppedUi = await cdp.evaluate(`Boolean(document.querySelector('.execution-card[data-status="interrupted"]')) && !document.querySelector('#messages').textContent.includes('Received: @Mini Fake slow:5000 browser stop')`);
-  const supervision = { executionVisible, connectivity, retryUi, stoppedUi };
+
+  await cdp.evaluate(`(() => {
+    document.querySelector('#message-input').value = '@Mini Fake approval browser decision';
+    document.querySelector('#composer').requestSubmit();
+  })()`);
+  await cdp.wait(`document.querySelector('.execution-card[data-status="waiting"] .approval-option[data-option-id="allow_once"]')`);
+  await cdp.screenshot("desktop-approval");
+  const approvalDetails = await cdp.evaluate(`(() => {
+    const card = document.querySelector('.approval-card[data-status="pending"]');
+    return card.textContent.includes("printf 'approved\\\\n' > approval-proof.txt") && card.textContent.includes('approval-proof.txt:1') && card.textContent.includes('--- old text') && card.textContent.includes('+++ new text');
+  })()`);
+  await cdp.evaluate(`document.querySelector('.execution-card[data-status="waiting"] .approval-option[data-option-id="allow_once"]').click()`);
+  await cdp.wait(`document.querySelector('.approval-card[data-status="approved"]') && document.querySelector('#messages').textContent.includes('Received: @Mini Fake approval browser decision')`);
+  const approvalUi = await cdp.evaluate(`Boolean(document.querySelector('.approval-card[data-status="approved"]')) && !document.querySelector('.execution-card[data-status="waiting"] .approval-option')`);
+
+  await cdp.evaluate(`(() => {
+    document.querySelector('#message-input').value = '@Mini Fake question browser structured answer';
+    document.querySelector('#composer').requestSubmit();
+  })()`);
+  await cdp.wait(`document.querySelector('.approval-card[data-kind="question"][data-status="pending"] .question-submit')`);
+  await cdp.evaluate(`(() => {
+    const card = document.querySelector('.approval-card[data-kind="question"][data-status="pending"]');
+    card.querySelector('[name="pm"]').value = 'npm';
+    card.querySelector('[name="pm_custom"]').value = 'pnpm';
+    card.querySelector('[name="count"]').value = '3';
+    card.querySelector('[name="ratio"]').value = '0.5';
+    card.querySelector('[name="verbose"]').checked = true;
+    for (const option of card.querySelector('[name="channels"]').options) option.selected = true;
+  })()`);
+  const decimalForm = await cdp.evaluate(`(() => {
+    const ratio = document.querySelector('.approval-question [name="ratio"]');
+    return { step: ratio.step, valid: ratio.form.reportValidity(), stepMismatch: ratio.validity.stepMismatch };
+  })()`);
+  await cdp.screenshot("desktop-question");
+  await cdp.evaluate(`document.querySelector('.approval-question').requestSubmit()`);
+  await cdp.wait(`document.querySelector('.approval-card[data-status="answered"]') && document.querySelector('#messages').textContent.includes('Question answers:')`);
+  const questionUi = await cdp.evaluate(`(() => {
+    const card = document.querySelector('.approval-card[data-status="answered"]');
+    return card.textContent.includes('"pm": "npm"') && card.textContent.includes('"pm_custom": "pnpm"') && card.textContent.includes('"count": 3') && card.textContent.includes('"ratio": 0.5') && document.querySelector('#messages').textContent.includes('\\"pm\\":\\"npm\\"');
+  })()`);
+  const decimalSubmission = decimalForm.step === 'any' && decimalForm.valid && !decimalForm.stepMismatch && questionUi;
+
+  const supervision = { executionVisible, connectivity, retryUi, stoppedUi, approvalUi, approvalDetails, questionUi, decimalSubmission };
 
   await cdp.evaluate(`document.querySelector('#add-agent-button').click()`);
   await cdp.wait(`document.querySelector('#agent-dialog').open`);
@@ -249,6 +291,11 @@ try {
   const roomLifecycle = { roomEdited, roomDeleted, armyProtected };
   await cdp.evaluate(`document.querySelector('[data-dialog-close="room-dialog"]').click()`);
 
+  await cdp.evaluate(`(() => {
+    document.querySelector('#message-input').value = '@Mini Fake approval mobile decision';
+    document.querySelector('#composer').requestSubmit();
+  })()`);
+  await cdp.wait(`document.querySelector('.execution-card[data-status="waiting"] .approval-option[data-option-id="reject_once"]')`);
   await cdp.send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
   await cdp.wait(`innerWidth === 390`);
   await cdp.evaluate(`document.querySelector('#rooms-button').click()`);
@@ -265,6 +312,20 @@ try {
   })`);
   await cdp.screenshot("mobile-agents");
   await cdp.evaluate(`document.querySelector('[data-close="inspector"]').click()`);
+  await cdp.screenshot("mobile-approval");
+  await cdp.evaluate(`document.querySelector('.execution-card[data-status="waiting"] .approval-option[data-option-id="reject_once"]').click()`);
+  await cdp.wait(`document.querySelector('.approval-card[data-status="rejected"]') && document.querySelector('#messages').textContent.includes('The proposed step was rejected')`);
+  const mobileApproval = await cdp.evaluate(`Boolean(document.querySelector('.approval-card[data-status="rejected"]')) && !document.querySelector('.execution-card[data-status="waiting"]') && document.documentElement.scrollWidth <= innerWidth`);
+  await cdp.evaluate(`(() => {
+    document.querySelector('#message-input').value = '@Mini Fake question mobile structured response';
+    document.querySelector('#composer').requestSubmit();
+  })()`);
+  await cdp.wait(`document.querySelector('.approval-card[data-kind="question"][data-status="pending"] .question-decline')`);
+  await cdp.screenshot("mobile-question");
+  const mobileQuestionFits = await cdp.evaluate(`document.documentElement.scrollWidth <= innerWidth && Boolean(document.querySelector('.approval-question [name="pm"]'))`);
+  await cdp.evaluate(`document.querySelector('.approval-card[data-kind="question"][data-status="pending"] .question-decline').click()`);
+  await cdp.wait(`document.querySelector('.approval-card[data-status="declined"]') && document.querySelector('#messages').textContent.includes('The question was decline')`);
+  const mobileQuestion = await cdp.evaluate(`Boolean(document.querySelector('.approval-card[data-status="declined"]')) && document.documentElement.scrollWidth <= innerWidth`) && mobileQuestionFits;
   await cdp.evaluate(`[...document.querySelectorAll('.mention-chip')].find((button) => button.textContent === '@Dell Fake').click()`);
   const mobile = await cdp.evaluate(`({
     width: innerWidth,
@@ -285,7 +346,7 @@ try {
   })`);
   await cdp.screenshot("mobile-agent-dialog");
   await cdp.evaluate(`document.querySelector('[data-dialog-close="agent-dialog"]').click(); document.querySelector('[data-close="inspector"]').click()`);
-  const report = { url, desktop, supervision, registered, disabled, removed, roomScoped, roomReply, roomLifecycle, drawer, mobile, mobileForm, runtimeExceptions: failures };
+  const report = { url, desktop, supervision, registered, disabled, removed, roomScoped, roomReply, roomLifecycle, drawer, mobile, mobileApproval, mobileQuestion, mobileForm, runtimeExceptions: failures };
   await writeFile(join(artifacts, "report.json"), `${JSON.stringify(report, null, 2)}\n`);
   console.log(JSON.stringify(report, null, 2));
   if (desktop.rooms !== 1 || desktop.agents !== 2 || !desktop.railVisible || !desktop.inspectorVisible || desktop.horizontalOverflow || !desktop.replyVisible) throw new Error("Desktop acceptance failed");
@@ -294,6 +355,7 @@ try {
   if (roomScoped.rooms !== 2 || !roomScoped.mini || !roomScoped.dellExcluded || !roomReply || !Object.values(roomLifecycle).every(Boolean)) throw new Error("Room management acceptance failed");
   if (!drawer.inspectorOpen || !drawer.backdropVisible || drawer.horizontalOverflow) throw new Error("Mobile drawer acceptance failed");
   if (!mobile.railHidden || !mobile.inspectorClosed || !mobile.armySelected || !mobile.addressed || mobile.horizontalOverflow) throw new Error("Mobile acceptance failed");
+  if (!mobileApproval || !mobileQuestion) throw new Error("Mobile interaction acceptance failed");
   if (!mobileForm.fitsViewport || !mobileForm.singleColumn || !mobileForm.localFieldsVisible) throw new Error("Mobile form acceptance failed");
   if (failures.length) throw new Error("Browser runtime exceptions occurred");
 } finally {

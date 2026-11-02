@@ -2,12 +2,13 @@ import { spawn } from "node:child_process";
 import { redactError } from "./redact.mjs";
 
 export class AcpClient {
-  constructor({ command, args, env = {}, cwd, requestTimeoutMs = 120_000 }) {
+  constructor({ command, args, env = {}, cwd, requestTimeoutMs = 120_000, onRequest = null }) {
     this.command = command;
     this.args = args;
     this.env = env;
     this.cwd = cwd;
     this.requestTimeoutMs = requestTimeoutMs;
+    this.onRequest = onRequest;
     this.child = null;
     this.pending = new Map();
     this.notifications = [];
@@ -32,6 +33,7 @@ export class AcpClient {
         cwd: this.cwd,
         env: { ...process.env, ...this.env },
         stdio: ["pipe", "pipe", "pipe"],
+        detached: process.platform !== "win32",
       });
       this.child = child;
       child.stderr.on("data", (chunk) => {
@@ -45,11 +47,21 @@ export class AcpClient {
         this.#rejectPending(new Error(`ACP input failed: ${redactError(cause.message)}`));
       });
       child.once("exit", (code) => {
+        if (child.pid && process.platform !== "win32") {
+          try { process.kill(-child.pid, "SIGTERM"); } catch (error) { if (error.code !== "ESRCH") throw error; }
+          const cleanup = setTimeout(() => {
+            try { process.kill(-child.pid, "SIGKILL"); } catch {}
+          }, 2_000);
+          cleanup.unref();
+        }
         this.#rejectPending(new Error(`ACP process exited (${code}): ${this.stderr}`));
         if (this.child === child) this.child = null;
         this.startPromise = null;
       });
-      await this.request("initialize", { protocolVersion: 1, clientCapabilities: {} });
+      await this.request("initialize", {
+        protocolVersion: 1,
+        clientCapabilities: { elicitation: { form: {} } },
+      });
     })();
     try {
       await this.startPromise;
@@ -59,19 +71,39 @@ export class AcpClient {
     }
   }
 
+  #respond(id, payload) {
+    if (!this.child?.stdin.writable) return;
+    this.child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, ...payload })}\n`);
+  }
+
+  async #handleRequest(message) {
+    try {
+      if (!["session/request_permission", "elicitation/create"].includes(message.method) || !this.onRequest) {
+        this.#respond(message.id, { error: { code: -32601, message: `Unsupported client method: ${message.method}` } });
+        return;
+      }
+      const result = await this.onRequest(message.params, { method: message.method });
+      this.#respond(message.id, { result });
+    } catch (error) {
+      this.#respond(message.id, { error: { code: error.status === 400 ? -32602 : -32000, message: redactError(error.message) } });
+    }
+  }
+
   #consume(chunk) {
     this.buffer += chunk.toString("utf8");
     for (let index = this.buffer.indexOf("\n"); index >= 0; index = this.buffer.indexOf("\n")) {
       const line = this.buffer.slice(0, index);
       this.buffer = this.buffer.slice(index + 1);
       if (!line.trim()) continue;
-      const message = JSON.parse(line);
+      let message;
+      try {
+        message = JSON.parse(line);
+      } catch {
+        this.#rejectPending(new Error("ACP stream contained malformed JSON."));
+        continue;
+      }
       if (message.id !== undefined && message.method) {
-        this.child?.stdin.write(`${JSON.stringify({
-          jsonrpc: "2.0",
-          id: message.id,
-          error: { code: -32601, message: `Unsupported client method: ${message.method}` },
-        })}\n`);
+        void this.#handleRequest(message);
       } else if (message.id !== undefined) {
         const pending = this.pending.get(message.id);
         if (!pending) continue;
@@ -129,23 +161,31 @@ export class AcpClient {
     return { answer, stopReason: result.stopReason };
   }
 
+  #signal(child, signal) {
+    try {
+      if (process.platform !== "win32" && child.pid) process.kill(-child.pid, signal);
+      else child.kill(signal);
+    } catch (error) {
+      if (error.code !== "ESRCH") throw error;
+    }
+  }
+
   async stop() {
     const child = this.child;
     this.child = null;
     this.startPromise = null;
+    this.#rejectPending(new Error("ACP client stopped."));
     if (!child || !child.pid || child.exitCode !== null || child.signalCode !== null) return;
     const exited = new Promise((resolve) => child.once("exit", resolve));
-    child.kill("SIGTERM");
-    let timer;
-    await Promise.race([
-      exited,
-      new Promise((resolve) => {
-        timer = setTimeout(() => {
-          if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
-          resolve();
-        }, 2_000);
-      }),
-    ]);
-    clearTimeout(timer);
+    const grace = (milliseconds) => new Promise((resolve) => {
+      const timer = setTimeout(resolve, milliseconds);
+      timer.unref();
+    });
+    this.#signal(child, "SIGTERM");
+    await Promise.race([exited, grace(2_000)]);
+    if (child.exitCode === null && child.signalCode === null) {
+      this.#signal(child, "SIGKILL");
+      await Promise.race([exited, grace(2_000)]);
+    }
   }
 }

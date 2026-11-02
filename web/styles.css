@@ -120,6 +120,19 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 .execution-action:hover { background: var(--yellow); }
 .execution-action:disabled { opacity: .45; cursor: wait; }
 .execution-error { grid-column: 1 / -1; color: var(--muted); overflow-wrap: anywhere; }
+.approval-card { grid-column: 1 / -1; display: grid; gap: 7px; min-width: 0; border-top: 1px solid var(--line); padding-top: 10px; }
+.approval-card > strong { font-size: 12px; line-height: 1.45; }
+.approval-meta { color: var(--muted); font-family: var(--mono); font-size: 9px; line-height: 1.5; }
+.approval-detail-label { margin-top: 4px; font-family: var(--mono); font-size: 9px; font-weight: 750; text-transform: uppercase; }
+.approval-operation { max-width: 100%; max-height: 320px; margin: 0; overflow: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--light-yellow); padding: 9px; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--mono); font-size: 10px; line-height: 1.55; }
+.approval-options { display: flex; flex-wrap: wrap; gap: 7px; }
+.approval-option[data-option-id="allow_once"], .approval-option[data-option-id="once"], .question-submit { background: var(--yellow); }
+.approval-option[data-option-id="reject_once"], .approval-option[data-option-id="reject"], .question-decline { background: var(--pink); }
+.approval-question { display: grid; gap: 12px; margin-top: 5px; }
+.question-field { gap: 6px; }
+.question-description { color: var(--muted); font-family: var(--mono); font-size: 9px; line-height: 1.5; }
+.question-field input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--navy); }
+.question-field select[multiple] { min-height: 74px; }
 .proof-note { background: var(--light-yellow); border-radius: 16px; padding: 16px; margin-top: 24px; }
 .proof-note p { font-size: 12px; line-height: 1.55; margin: 8px 0 0; }
 .protocol-note { color: var(--muted); margin-top: 24px; line-height: 1.8; }

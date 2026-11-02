@@ -2,6 +2,7 @@ import { copyFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { AgentRuntime } from "./agent-runtime.mjs";
+import { normalizeForm, protocolValue, validateFormContent } from "./elicitation.mjs";
 import { redactError } from "./redact.mjs";
 
 const MAX_TURNS_PER_REQUEST = 6;
@@ -44,14 +45,17 @@ const armyRoom = () => ({
 });
 
 export class Hub {
-  constructor({ root, statePath, agents = null }) {
+  constructor({ root, statePath, agents = null, approvalTimeoutMs = 120_000 }) {
     this.root = root;
     this.statePath = statePath;
     this.configuredAgents = agents;
+    this.approvalTimeoutMs = approvalTimeoutMs;
     this.listeners = new Set();
     this.state = null;
     this.runtime = null;
     this.saveQueue = Promise.resolve();
+    this.pendingApprovals = new Map();
+    this.approvalTimers = new Map();
   }
 
   async load() {
@@ -87,8 +91,18 @@ export class Hub {
         history: [...(execution.history ?? []), { from: execution.status, to: "unknown", at: recoveredAt, error }],
       };
     });
+    const approvals = (saved?.approvals ?? []).map((approval) => {
+      if (approval.status !== "pending") return approval;
+      return {
+        ...approval,
+        status: "interrupted",
+        updatedAt: recoveredAt,
+        resolvedAt: recoveredAt,
+        error: "The hub restarted before this decision was answered; the execution outcome is unknown.",
+      };
+    });
     this.state = {
-      version: 4,
+      version: 5,
       rooms,
       agentDefinitions: definitions.map((agent) => ({ ...agent, enabled: agent.enabled !== false })),
       agents: definitions.map((definition) => {
@@ -109,6 +123,7 @@ export class Hub {
         createdAt: new Date().toISOString(),
       }]).map((message) => ({ ...message, roomId: message.roomId ?? "army" })),
       executions,
+      approvals,
       receipts: saved?.receipts ?? {},
     };
     this.runtime = new AgentRuntime({
@@ -121,6 +136,7 @@ export class Hub {
         await this.save();
         this.emit("change");
       },
+      onRequest: (request) => this.requestApproval(request),
     });
     await mkdir(dirname(this.statePath), { recursive: true });
     await this.save();
@@ -139,6 +155,7 @@ export class Hub {
       }),
       messages: this.state.messages,
       executions: this.state.executions,
+      approvals: this.state.approvals,
       limits: { maxTurnsPerRequest: MAX_TURNS_PER_REQUEST },
     };
   }
@@ -257,13 +274,15 @@ export class Hub {
     const deletedMessages = this.state.messages.filter((message) => message.roomId === room.id);
     const deletedMessageIds = new Set(deletedMessages.map((message) => message.id));
     const deletedExecutions = this.state.executions.filter((execution) => execution.roomId === room.id).length;
+    const deletedApprovals = this.state.approvals.filter((approval) => approval.roomId === room.id).length;
     this.state.rooms = this.state.rooms.filter((candidate) => candidate.id !== room.id);
     this.state.messages = this.state.messages.filter((message) => message.roomId !== room.id);
     this.state.executions = this.state.executions.filter((execution) => execution.roomId !== room.id);
+    this.state.approvals = this.state.approvals.filter((approval) => approval.roomId !== room.id);
     this.state.receipts = Object.fromEntries(Object.entries(this.state.receipts).filter(([, messageId]) => !deletedMessageIds.has(messageId)));
     await this.save();
     this.emit("change");
-    return { removed: room.id, deletedMessages: deletedMessages.length, deletedExecutions };
+    return { removed: room.id, deletedMessages: deletedMessages.length, deletedExecutions, deletedApprovals };
   }
 
   normalizeAgent(input, existing = null) {
@@ -327,6 +346,9 @@ export class Hub {
   async updateAgent(agentId, input) {
     const index = this.state.agentDefinitions.findIndex((agent) => agent.id === agentId);
     if (index < 0) throw problem("Agent not found.", 404);
+    if (this.state.executions.some((execution) => execution.agentId === agentId && ["queued", "running", "waiting"].includes(execution.status))) {
+      throw problem("Stop active work before changing this agent.", 409);
+    }
     const previous = this.state.agentDefinitions[index];
     const agent = this.normalizeAgent(input, previous);
     this.assertUniqueAgentName(agent);
@@ -348,6 +370,9 @@ export class Hub {
   async removeAgent(agentId) {
     const index = this.state.agentDefinitions.findIndex((agent) => agent.id === agentId);
     if (index < 0) throw problem("Agent not found.", 404);
+    if (this.state.executions.some((execution) => execution.agentId === agentId && ["queued", "running", "waiting"].includes(execution.status))) {
+      throw problem("Stop active work before removing this agent.", 409);
+    }
     await this.runtime.stopAgent(agentId);
     this.state.agentDefinitions.splice(index, 1);
     this.state.agents = this.state.agents.filter((agent) => agent.id !== agentId);
@@ -433,7 +458,7 @@ export class Hub {
     const allowed = {
       queued: ["running", "waiting", "failed", "interrupted", "unknown"],
       running: ["waiting", "completed", "failed", "interrupted", "unknown"],
-      waiting: ["queued", "running", "interrupted", "unknown"],
+      waiting: ["queued", "running", "failed", "interrupted", "unknown"],
       completed: [],
       failed: [],
       interrupted: [],
@@ -449,6 +474,146 @@ export class Hub {
     if (error !== undefined) execution.error = error;
     if (resultMessageId !== undefined) execution.resultMessageId = resultMessageId;
     execution.history.push({ from: previous, to: status, at, ...(error ? { error } : {}) });
+  }
+
+  settleApproval(approval, result = null) {
+    const timer = this.approvalTimers.get(approval.id);
+    if (timer) clearTimeout(timer);
+    this.approvalTimers.delete(approval.id);
+    const pending = this.pendingApprovals.get(approval.id);
+    this.pendingApprovals.delete(approval.id);
+    const cancelled = approval.kind === "question" ? { action: "cancel" } : { outcome: { outcome: "cancelled" } };
+    pending?.resolve(result ?? cancelled);
+  }
+
+  interruptExecutionApprovals(executionId, error) {
+    const at = new Date().toISOString();
+    for (const approval of this.state.approvals.filter((candidate) => candidate.executionId === executionId && candidate.status === "pending")) {
+      Object.assign(approval, { status: "interrupted", updatedAt: at, resolvedAt: at, error });
+      this.settleApproval(approval);
+    }
+  }
+
+  async requestApproval({ agentId, executionId, sessionId, method = "session/request_permission", params }) {
+    const execution = this.execution(executionId);
+    const currentSession = this.state.agents.find((candidate) => candidate.id === agentId)?.sessionId;
+    if (execution.status !== "running" || currentSession !== sessionId || this.state.approvals.some((candidate) => candidate.executionId === executionId && candidate.status === "pending")) {
+      throw problem("Agent interaction does not match the active execution.", 409);
+    }
+    const question = method === "elicitation/create";
+    if (!question && method !== "session/request_permission") throw problem("Unsupported agent interaction.", 400);
+    const form = question ? normalizeForm(params) : null;
+    const options = question ? [] : (Array.isArray(params.options) ? params.options.slice(0, 8).map((option) => ({
+      id: clean(option.optionId).slice(0, 120),
+      label: redactError(clean(option.name)).slice(0, 160),
+      kind: clean(option.kind, "allow_once").slice(0, 40),
+    })) : []);
+    if (!question && (!options.length || options.some((option) => !option.id || !option.label) || new Set(options.map((option) => option.id)).size !== options.length)) {
+      throw problem("Permission request has invalid options.", 400);
+    }
+    const at = new Date().toISOString();
+    const approval = {
+      id: randomUUID(),
+      kind: question ? "question" : "permission",
+      executionId,
+      roomId: execution.roomId,
+      agentId,
+      sessionId,
+      title: redactError(clean(question ? params.message : params.toolCall?.title, question ? "Agent requests information" : "Agent requests a decision")).slice(0, 240),
+      operation: question ? null : protocolValue(params.toolCall ?? {}),
+      form,
+      options,
+      status: "pending",
+      createdAt: at,
+      updatedAt: at,
+      expiresAt: new Date(Date.now() + this.approvalTimeoutMs).toISOString(),
+      resolvedAt: null,
+      selectedOptionId: null,
+      responseAction: null,
+      responseContent: null,
+      error: null,
+    };
+    this.state.approvals.push(approval);
+    this.transitionExecution(execution, "waiting");
+    const pending = new Promise((resolve) => this.pendingApprovals.set(approval.id, { resolve }));
+    const timer = setTimeout(() => { void this.expireApproval(approval.id); }, this.approvalTimeoutMs);
+    timer.unref();
+    this.approvalTimers.set(approval.id, timer);
+    await this.save();
+    this.emit("change");
+    return pending;
+  }
+
+  async respondApproval(approvalId, input) {
+    const approval = this.state.approvals.find((candidate) => candidate.id === approvalId);
+    if (!approval) throw problem("Approval not found.", 404);
+    if (approval.status !== "pending") throw problem("This decision is already terminal.", 409);
+    const execution = this.execution(approval.executionId);
+    const currentSession = this.state.agents.find((candidate) => candidate.id === approval.agentId)?.sessionId;
+    if (execution.status !== "waiting" || currentSession !== approval.sessionId) throw problem("The decision no longer matches the active execution session.", 409);
+    const at = new Date().toISOString();
+    let result;
+    if (approval.kind === "question") {
+      const action = clean(input?.action);
+      if (!["accept", "decline", "cancel"].includes(action)) throw problem("Choose accept, decline, or cancel.", 400);
+      const content = action === "accept" ? validateFormContent(approval.form, input.content) : null;
+      Object.assign(approval, {
+        status: action === "accept" ? "answered" : action === "decline" ? "declined" : "cancelled",
+        responseAction: action,
+        responseContent: content,
+        updatedAt: at,
+        resolvedAt: at,
+        error: null,
+      });
+      result = { action, ...(content ? { content } : {}) };
+    } else {
+      const optionId = typeof input === "string" ? input : input?.optionId;
+      const option = approval.options.find((candidate) => candidate.id === clean(optionId));
+      if (!option) throw problem("Choose one of the offered options.", 400);
+      Object.assign(approval, {
+        status: /reject|deny/i.test(option.kind) ? "rejected" : "approved",
+        selectedOptionId: option.id,
+        updatedAt: at,
+        resolvedAt: at,
+        error: null,
+      });
+      result = { outcome: { outcome: "selected", optionId: option.id } };
+    }
+    this.transitionExecution(execution, "running");
+    await this.save();
+    this.settleApproval(approval, result);
+    this.emit("change");
+    return approval;
+  }
+
+  async expireApproval(approvalId) {
+    const approval = this.state.approvals.find((candidate) => candidate.id === approvalId);
+    if (!approval || approval.status !== "pending") return approval;
+    const execution = this.execution(approval.executionId);
+    if (execution.status !== "waiting") return approval;
+    const at = new Date().toISOString();
+    const error = "Decision expired; the active execution was stopped without retrying it.";
+    Object.assign(approval, { status: "expired", updatedAt: at, resolvedAt: at, error });
+    this.settleApproval(approval);
+    const agent = this.definitionPublic(execution.agentId);
+    const reply = {
+      id: randomUUID(),
+      roomId: execution.roomId,
+      authorId: execution.agentId,
+      authorType: "error",
+      authorName: agent.name,
+      nodeId: agent.nodeId,
+      originId: execution.originId,
+      text: `Execution failed: ${error}`,
+      createdAt: at,
+    };
+    this.state.messages.push(reply);
+    this.transitionExecution(execution, "failed", { error, resultMessageId: reply.id });
+    execution.retrySafe = false;
+    await this.runtime.interrupt(execution.agentId);
+    await this.save();
+    this.emit("change");
+    return approval;
   }
 
   async execute(executionId) {
@@ -486,8 +651,9 @@ export class Hub {
       await this.save();
       this.emit("change");
     } catch (error) {
-      if (!["queued", "running"].includes(execution.status)) return execution;
+      if (!["queued", "running", "waiting"].includes(execution.status)) return execution;
       const message = redactError(error.message);
+      this.interruptExecutionApprovals(execution.id, `Execution failed before a decision was completed: ${message}`);
       const reply = {
         id: randomUUID(),
         roomId: execution.roomId,
@@ -519,9 +685,10 @@ export class Hub {
     if (!["queued", "running", "waiting"].includes(execution.status)) throw problem("Only active work can be stopped.", 409);
     const status = execution.status;
     this.runtime.cancel(execution.id);
+    this.interruptExecutionApprovals(execution.id, "Stopped by Mo before a decision was completed.");
     this.transitionExecution(execution, "interrupted", { error: "Stopped by Mo.", resultMessageId: null });
     execution.retrySafe = false;
-    if (status === "running") await this.runtime.interrupt(execution.agentId);
+    if (status === "running" || status === "waiting") await this.runtime.interrupt(execution.agentId);
     await this.save();
     this.emit("change");
     return execution;
@@ -568,7 +735,18 @@ export class Hub {
   }
 
   async stop() {
+    const waiting = this.state.executions.filter((execution) => execution.status === "waiting");
+    for (const execution of waiting) {
+      const error = "The hub stopped while awaiting a decision; the outcome is unknown and it was not rerun.";
+      this.runtime.cancel(execution.id);
+      this.interruptExecutionApprovals(execution.id, error);
+      this.transitionExecution(execution, "unknown", { error });
+      await this.runtime.interrupt(execution.agentId);
+    }
+    if (waiting.length) await this.save();
     await this.runtime.stop();
+    for (const timer of this.approvalTimers.values()) clearTimeout(timer);
+    this.approvalTimers.clear();
     await this.saveQueue;
   }
 }

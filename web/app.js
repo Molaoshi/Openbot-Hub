@@ -7,7 +7,7 @@ const roomList = document.querySelector("#room-list");
 const mentionRow = document.querySelector("#mention-row");
 const connectionState = document.querySelector("#connection-state");
 const toast = document.querySelector("#toast");
-let state = { rooms: [], agents: [], messages: [], executions: [] };
+let state = { rooms: [], agents: [], messages: [], executions: [], approvals: [] };
 let currentRoomId = "army";
 try { currentRoomId = localStorage.getItem("openbot-hub.room") || "army"; } catch {}
 let toastTimer;
@@ -83,6 +83,97 @@ function renderHeader() {
   document.title = `OpenBot Hub — ${room.name}`;
 }
 
+function operationDetail(container, label, value) {
+  if (value === undefined || value === null || value === "") return;
+  container.append(element("span", "approval-detail-label", label), element("pre", "approval-operation", value));
+}
+
+function renderOperation(decision, operation) {
+  if (!operation) return;
+  const raw = operation.rawInput;
+  if (typeof raw?.command === "string") operationDetail(decision, "Command", raw.command);
+  if (Array.isArray(raw?.command)) operationDetail(decision, "Command (argv)", raw.command.join("\n"));
+  if (raw !== undefined) operationDetail(decision, "Complete operation input", JSON.stringify(raw, null, 2));
+  if (operation.locations !== undefined) {
+    const paths = operation.locations.map((location) => `${location.path ?? "(no path)"}${location.line !== undefined ? `:${location.line}` : ""}`).join("\n");
+    operationDetail(decision, "Paths and locations", paths);
+    operationDetail(decision, "Complete location data", JSON.stringify(operation.locations, null, 2));
+  }
+  if (operation.content !== undefined) {
+    operationDetail(decision, "Complete content and diff data", JSON.stringify(operation.content, null, 2));
+    for (const item of operation.content) {
+      if (item.type === "diff") {
+        operationDetail(decision, `Diff · ${item.path}`, `--- old text\n${item.oldText ?? ""}\n+++ new text\n${item.newText ?? ""}`);
+      } else if (item.type === "content" && item.content?.text) {
+        operationDetail(decision, "Operation details", item.content.text);
+      }
+    }
+  }
+}
+
+function questionChoices(schema, multiple = false) {
+  if (schema.enum) return schema.enum.map((value) => ({ const: value, title: value }));
+  return schema[multiple ? "anyOf" : "oneOf"] ?? null;
+}
+
+function questionField(key, schema, required) {
+  const wrapper = element("label", "field question-field");
+  wrapper.append(element("span", "", `${schema.title || key}${required ? " *" : ""}`));
+  if (schema.description) wrapper.append(element("small", "question-description", schema.description));
+  const choices = schema.type === "array" ? questionChoices(schema.items, true) : questionChoices(schema);
+  let control;
+  if (choices) {
+    control = element("select");
+    control.multiple = schema.type === "array";
+    if (!control.multiple && !required) control.append(element("option", "", "No answer"));
+    for (const choice of choices) {
+      const option = element("option", "", choice.title);
+      option.value = choice.const;
+      control.append(option);
+    }
+    if (schema.default !== undefined) {
+      if (control.multiple) {
+        for (const option of control.options) option.selected = schema.default.includes?.(option.value) ?? false;
+      } else control.value = schema.default;
+    }
+  } else if (schema.type === "boolean") {
+    control = element("input");
+    control.type = "checkbox";
+    control.checked = schema.default === true;
+  } else {
+    control = element("input");
+    control.type = schema.type === "number" || schema.type === "integer" ? "number" : "text";
+    if (schema.type === "integer") control.step = "1";
+    if (schema.type === "number") control.step = "any";
+    if (schema.minimum !== undefined) control.min = String(schema.minimum);
+    if (schema.maximum !== undefined) control.max = String(schema.maximum);
+    if (schema.minLength !== undefined) control.minLength = schema.minLength;
+    if (schema.maxLength !== undefined) control.maxLength = schema.maxLength;
+    if (schema.pattern !== undefined) control.pattern = schema.pattern;
+    if (schema.default !== undefined) control.value = String(schema.default);
+  }
+  control.name = key;
+  control.dataset.questionField = key;
+  control.dataset.questionType = schema.type;
+  if (required && schema.type !== "boolean" && !control.multiple) control.required = true;
+  wrapper.append(control);
+  if (schema.pattern) wrapper.append(element("small", "question-description", `Expected pattern: ${schema.pattern}`));
+  return wrapper;
+}
+
+function questionAnswers(form) {
+  const content = {};
+  for (const control of form.querySelectorAll("[data-question-field]")) {
+    const key = control.dataset.questionField;
+    if (control.multiple) content[key] = [...control.selectedOptions].map((option) => option.value);
+    else if (control.type === "checkbox") content[key] = control.checked;
+    else if (control.type === "number") {
+      if (control.value !== "") content[key] = Number(control.value);
+    } else if (control.value !== "") content[key] = control.value;
+  }
+  return content;
+}
+
 function executionCard(execution) {
   const agent = state.agents.find((candidate) => candidate.id === execution.agentId);
   const card = element("article", "execution-card");
@@ -125,6 +216,74 @@ function executionCard(execution) {
   }
   card.append(identity, status, controls);
   if (execution.error) card.append(element("div", "execution-error", execution.error));
+  for (const approval of state.approvals.filter((candidate) => candidate.executionId === execution.id)) {
+    const decision = element("div", "approval-card");
+    decision.dataset.approvalId = approval.id;
+    decision.dataset.status = approval.status;
+    decision.dataset.kind = approval.kind ?? "permission";
+    decision.append(element("strong", "", approval.title));
+    const selected = (approval.options ?? []).find((option) => option.id === approval.selectedOptionId);
+    const detail = approval.status === "pending"
+      ? approval.kind === "question" ? "Waiting for Mo · answer, decline, or cancel" : "Waiting for Mo · no further action until you decide"
+      : `${approval.status.toUpperCase()}${selected ? ` · ${selected.label}` : ""}`;
+    decision.append(element("span", "approval-meta", detail));
+    renderOperation(decision, approval.operation);
+    if (approval.form?.description) decision.append(element("span", "question-description", approval.form.description));
+    const respond = async (payload) => {
+      for (const candidate of decision.querySelectorAll("button")) candidate.disabled = true;
+      try {
+        await api(`/api/approvals/${encodeURIComponent(approval.id)}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        await refresh();
+        showToast("Response returned to the same agent session.");
+      } catch (error) {
+        showToast(error.message);
+        for (const candidate of decision.querySelectorAll("button")) candidate.disabled = false;
+      }
+    };
+    if (approval.status === "pending" && approval.kind === "question") {
+      const form = element("form", "approval-question");
+      for (const [key, schema] of Object.entries(approval.form.properties)) {
+        form.append(questionField(key, schema, approval.form.required.includes(key)));
+      }
+      const actions = element("div", "approval-options");
+      const submit = element("button", "execution-action approval-option question-submit", "Send answers");
+      submit.type = "submit";
+      const decline = element("button", "execution-action approval-option question-decline", "Decline");
+      decline.type = "button";
+      decline.dataset.questionAction = "decline";
+      decline.addEventListener("click", () => respond({ action: "decline" }));
+      const cancel = element("button", "execution-action approval-option question-cancel", "Cancel");
+      cancel.type = "button";
+      cancel.dataset.questionAction = "cancel";
+      cancel.addEventListener("click", () => respond({ action: "cancel" }));
+      actions.append(submit, decline, cancel);
+      form.append(actions);
+      form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        if (!form.reportValidity()) return;
+        void respond({ action: "accept", content: questionAnswers(form) });
+      });
+      decision.append(form);
+    } else if (approval.status === "pending") {
+      const options = element("div", "approval-options");
+      for (const option of approval.options) {
+        const button = element("button", "execution-action approval-option", option.label);
+        button.type = "button";
+        button.dataset.optionId = option.id;
+        button.addEventListener("click", () => respond({ optionId: option.id }));
+        options.append(button);
+      }
+      decision.append(options);
+    } else {
+      if (approval.responseContent) operationDetail(decision, "Submitted answers", JSON.stringify(approval.responseContent, null, 2));
+      if (approval.error) decision.append(element("span", "approval-meta", approval.error));
+    }
+    card.append(decision);
+  }
   return card;
 }
 
