@@ -120,6 +120,15 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 .execution-action:hover { background: var(--yellow); }
 .execution-action:disabled { opacity: .45; cursor: wait; }
 .execution-error { grid-column: 1 / -1; color: var(--muted); overflow-wrap: anywhere; }
+.execution-events { grid-column: 1 / -1; display: grid; gap: 8px; min-width: 0; }
+.execution-event { display: grid; gap: 7px; min-width: 0; border-top: 1px solid var(--line); padding-top: 10px; }
+.execution-event-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.execution-event-header > strong { min-width: 0; font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
+.execution-event-status { flex: 0 0 auto; padding: 2px 5px; font-family: var(--mono); font-size: 8px; line-height: 1.5; }
+.execution-plan { display: grid; gap: 7px; margin: 0; padding-left: 22px; }
+.execution-plan-entry { padding-left: 3px; font-size: 11px; line-height: 1.5; }
+.execution-plan-entry > span, .execution-plan-entry > small { display: block; overflow-wrap: anywhere; }
+.execution-plan-entry[data-status="completed"] > span { text-decoration: line-through; text-decoration-color: var(--muted); }
 .approval-card { grid-column: 1 / -1; display: grid; gap: 7px; min-width: 0; border-top: 1px solid var(--line); padding-top: 10px; }
 .approval-card > strong { font-size: 12px; line-height: 1.45; }
 .approval-meta { color: var(--muted); font-family: var(--mono); font-size: 9px; line-height: 1.5; }

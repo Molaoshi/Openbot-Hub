@@ -56,13 +56,14 @@ Service logs are written to `runtime/openbot-hub.out.log` and `runtime/openbot-h
 - Use the header pencil to rename a project room, edit its purpose or membership, or delete its history with confirmation. Army permits purpose edits only.
 - Execution cards show queued, running, waiting, completed, failed, interrupted, and unknown states. Stop queued/active work or retry only known-safe pre-execution failures.
 - Harness questions and permission requests appear on their execution card. Approving or rejecting returns the decision to the same native session; expiry, stopping, and restart leave explicit terminal records rather than pending work.
+- Execution cards show live plans and tool calls with pending/completed states, commands, paths, content, raw output, timestamps, and authoritative node labels. Tool updates coalesce into one durable operation and transcript replay is excluded.
 - The Army room always includes every enabled agent. In project rooms, `@everyone` includes only enabled members.
 
 Remote-ACP registration references a connector config file; connector tokens remain in separate owner-only files. OpenCode uses its own existing provider profile. Neither connector credentials nor provider credentials are entered into the agent registry, prompts, message history, or Git.
 
 ## Real OpenCode acceptance
 
-The separate live acceptance commands use the installed OpenCode CLI and its existing provider authentication. The base gate makes two small real model calls, creates a native file in a disposable workspace, restarts the Hub, verifies native session recall, checks execution identity and workspace-only task artifacts, and removes the disposable directory. The supervision gate makes five small calls and proves native permission approval with complete operation details, a real OpenCode form question answered through `elicitation/create`, active stop and descendant cleanup, provider-crash failure and cleanup, and successful recovery in the same native session.
+The separate live acceptance commands use the installed OpenCode CLI and its existing provider authentication. The base gate makes two small real model calls, creates a native file in a disposable workspace, requires a completed real tool event with result evidence and `mac-mini` attribution, restarts the Hub, verifies native session recall with zero replayed progress duplicates, checks execution identity and workspace-only task artifacts, and removes the disposable directory. The supervision gate makes five small calls and proves native permission approval with complete operation details, a real OpenCode form question answered through `elicitation/create`, active stop and descendant cleanup, provider-crash failure and cleanup, and successful recovery in the same native session.
 
 ```sh
 npm run test:opencode
@@ -83,7 +84,7 @@ npm run test:opencode  # real provider calls; separate live gate
 npm run test:opencode-supervision  # five-call real supervision gate
 ```
 
-The offline suite contains 19 tests covering remote ACP execution, workspace proof, session resume, credential rejection, connectivity health, OpenCode registration validation, concurrent idempotency, per-agent queue order, queued/active stop, process-group cleanup, known-safe retry, unknown-outcome recovery, room lifecycle safeguards, and persistence across restart. Approval coverage includes native `elicitation/create` questions with structured accept/decline/cancel outcomes, enforced string patterns, decimal number submission, complete/redacted permission operation details, wrong-session rejection, invalid and repeated decisions, expiry, waiting stop, active-modification guards, restart recovery, and the persistence-decision race. Hardening regressions also cover nonexistent executables, foreign Origin/Host requests, non-JSON mutations, malformed-state preservation, unique workspaces, and provider-stderr redaction. GitHub Actions runs syntax and offline tests for every PR and push to `main`; browser and live provider acceptance remain local gates.
+The offline suite contains 21 tests covering remote ACP execution, workspace proof, session resume, credential rejection, connectivity health, OpenCode registration validation, concurrent idempotency, per-agent queue order, queued/active stop, process-group cleanup, known-safe retry, unknown-outcome recovery, room lifecycle safeguards, and persistence across restart. Progress coverage includes tool/plan normalization, secret redaction, pending-to-completed coalescing, raw output, authoritative Mini/Dell node attribution, restart persistence, and legacy execution loading. Approval coverage includes native `elicitation/create` questions with structured accept/decline/cancel outcomes, enforced string patterns, decimal number submission, complete/redacted permission operation details, wrong-session rejection, invalid and repeated decisions, expiry, waiting stop, active-modification guards, restart recovery, and the persistence-decision race. Hardening regressions also cover nonexistent executables, foreign Origin/Host requests, non-JSON mutations, malformed-state preservation, unique workspaces, and provider-stderr redaction. GitHub Actions runs syntax and offline tests for every PR and push to `main`; browser and live provider acceptance remain local gates.
 
 ## Product plan
 
@@ -92,7 +93,7 @@ The offline suite contains 19 tests covering remote ACP execution, workspace pro
 - [Requirements matrix](docs/requirements-matrix.md) — status and acceptance evidence for every requirement.
 - [Testing instructions](docs/TESTING.md) — manual checks and current limitations.
 
-**M1 is complete. M2 is active:** the real OpenCode adapter, native file/session acceptance, real-agent stop/failure supervision, and room-bound native questions and detailed approvals have landed; rich progress, attachments, generated-file return, and the remaining M2 exit gate are still open. Feature changes must reference requirement IDs and update the matrix.
+**M1 is complete. M2 is active:** the real OpenCode adapter, native file/session acceptance, real-agent stop/failure supervision, room-bound native questions and detailed approvals, and rich tool/plan progress have landed; attachments, generated-file return, and the remaining M2 exit gate are still open. Feature changes must reference requirement IDs and update the matrix.
 
 ## Source layout
 

@@ -134,6 +134,12 @@ try {
   assert.equal(first.reply.authorType, "agent");
   assert.equal(first.reply.nodeId, definition.nodeId);
   assert.equal(first.reply.text.trim(), "OPENBOT_REAL_DONE");
+  const realTools = first.execution.events.filter((event) => event.kind === "tool");
+  assert.ok(realTools.length > 0, "Real OpenCode file work must emit tool progress");
+  const completedTool = realTools.find((event) => event.status === "completed" && (event.operation.rawOutput !== undefined || event.operation.content !== undefined));
+  assert.ok(completedTool, "A real OpenCode tool must complete with result evidence");
+  assert.ok(realTools.every((event) => event.nodeId === definition.nodeId), "Real tool events must use the authoritative execution node");
+  assert.match(JSON.stringify(completedTool.operation), /evidence\.txt/);
   assert.equal(await readFile(join(workspace, "evidence.txt"), "utf8"), `${marker}\n`);
   assert.deepEqual(await filesBelow(workspace), ["evidence.txt"]);
   assert.deepEqual(await filesBelow(control), ["agents.json", "hub-state.json", "outside-guard.txt"]);
@@ -156,6 +162,7 @@ try {
   );
   assert.equal(second.reply.text.trim(), marker);
   assert.equal(second.execution.status, "completed");
+  assert.deepEqual(second.execution.events, [], "Session replay and a no-tool turn must not create duplicate progress");
   const persistedAfter = JSON.parse(await readFile(statePath, "utf8"));
   assert.equal(persistedAfter.agents.find((agent) => agent.id === definition.id)?.sessionId, sessionBefore);
   assert.deepEqual(await filesBelow(workspace), ["evidence.txt"]);
@@ -164,11 +171,12 @@ try {
 
   const report = {
     ok: true,
-    requirements: ["AGENT-02", "AGENT-04", "EXEC-02", "EXEC-07"],
+    requirements: ["AGENT-02", "AGENT-04", "EXEC-02", "EXEC-06", "EXEC-07"],
     adapter: "local-opencode",
     realModelCalls: 2,
     connectivity: health.status,
     nativeFileEvidence: true,
+    realToolProgress: { count: realTools.length, completedWithResult: true, nodeId: completedTool.nodeId, replayDuplicates: 0 },
     workspaceOnlyTaskArtifacts: true,
     executionIdentity: { agentId: first.reply.authorId, nodeId: first.reply.nodeId, roomId: first.execution.roomId },
     executionStates: first.execution.history.map((entry) => entry.to),

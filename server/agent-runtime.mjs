@@ -3,11 +3,12 @@ import { resolve } from "node:path";
 import { AcpClient } from "./acp-client.mjs";
 
 export class AgentRuntime {
-  constructor({ root, agents, onSession, onRequest }) {
+  constructor({ root, agents, onSession, onRequest, onNotification }) {
     this.root = root;
     this.agents = agents;
     this.onSession = onSession;
     this.onRequest = onRequest;
+    this.onNotification = onNotification;
     this.clients = new Map();
     this.queues = new Map();
     this.cancellations = new Set();
@@ -54,6 +55,7 @@ export class AgentRuntime {
       });
     }
     client.onRequest = (params, context) => this.handleRequest(agent.id, params, context);
+    client.onNotification = (params) => this.handleNotification(agent.id, params);
     this.clients.set(agent.id, client);
     return client;
   }
@@ -63,6 +65,12 @@ export class AgentRuntime {
     if (!active || active.sessionId !== params.sessionId) throw new Error("Agent interaction does not match the active execution session.");
     if (!this.onRequest) throw new Error("This Hub does not accept agent interactions.");
     return this.onRequest({ agentId, executionId: active.executionId, sessionId: active.sessionId, method, params });
+  }
+
+  async handleNotification(agentId, params) {
+    const active = this.active.get(agentId);
+    if (!active || active.sessionId !== params.sessionId || !this.onNotification) return;
+    await this.onNotification({ agentId, executionId: active.executionId, sessionId: active.sessionId, params });
   }
 
   run(agentId, sessionId, text, { executionId, onStart = async () => {} } = {}) {

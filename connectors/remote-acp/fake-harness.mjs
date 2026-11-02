@@ -194,6 +194,47 @@ const handlers = {
       record(session, "agent_message_chunk", finalAnswer);
       reply(request, { stopReason: accepted ? "end_turn" : "refusal" });
     };
+    if (/\bprogress\b/.test(text)) {
+      const toolCallId = `progress-${session.id}`;
+      update(session.id, {
+        sessionUpdate: "plan",
+        entries: [
+          { content: "Inspect the assigned workspace", status: "in_progress", priority: "high" },
+          { content: "Return verified output to the room", status: "pending", priority: "medium" },
+        ],
+      });
+      update(session.id, {
+        sessionUpdate: "tool_call",
+        toolCallId,
+        title: "Run deterministic progress command",
+        kind: "execute",
+        status: "pending",
+        rawInput: { command: ["sh", "-c", "printf 'progress complete\\n'"], cwd: workspace },
+        locations: [{ path: join(workspace, "progress-proof.txt") }],
+      });
+      const completeProgress = () => {
+        update(session.id, {
+          sessionUpdate: "tool_call_update",
+          toolCallId,
+          title: "Run deterministic progress command",
+          status: "completed",
+          content: [{ type: "content", content: { type: "text", text: "Deterministic progress command completed." } }],
+          rawOutput: { stdout: "progress complete\n", exitCode: 0 },
+        });
+        update(session.id, {
+          sessionUpdate: "plan",
+          entries: [
+            { content: "Inspect the assigned workspace", status: "completed", priority: "high" },
+            { content: "Return verified output to the room", status: "completed", priority: "medium" },
+          ],
+        });
+        finish();
+      };
+      const delay = Number(text.match(/\bslow:(\d+)\b/)?.[1] ?? 0);
+      if (delay > 0) setTimeout(completeProgress, Math.min(delay, 30_000));
+      else completeProgress();
+      return;
+    }
     if (/\bquestion\b/.test(text)) {
       requestQuestion(session.id, text)
         .then((result) => finish(result.action === "accept", result.action === "accept" ? `Question answers: ${JSON.stringify(result.content)}` : `The question was ${result.action}; no further action was taken.`))
