@@ -93,6 +93,7 @@ function validateValue(key, schema, value) {
     if (typeof value !== "string") throw invalid(`Question ${key} requires text.`);
     if (schema.minLength !== undefined && value.length < schema.minLength) throw invalid(`Question ${key} is shorter than minLength.`);
     if (schema.maxLength !== undefined && value.length > schema.maxLength) throw invalid(`Question ${key} is longer than maxLength.`);
+    if (schema.pattern !== undefined && !new RegExp(schema.pattern).test(value)) throw invalid(`Question ${key} does not match its pattern.`);
     const choices = titledChoices(schema, key);
     if (choices && !choices.includes(value)) throw invalid(`Question ${key} requires one of the offered choices.`);
     return value;

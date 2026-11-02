@@ -85,6 +85,7 @@ function requestQuestion(sessionId, text) {
           },
           pm_custom: { type: "string", title: "Custom package manager", maxLength: 40 },
           count: { type: "integer", title: "Retry count", minimum: 1, maximum: 5, default: 1 },
+          ratio: { type: "number", title: "Completion ratio", minimum: 0, maximum: 1, default: 0.5 },
           verbose: { type: "boolean", title: "Verbose output", default: false },
           channels: {
             type: "array",

@@ -33,6 +33,12 @@ test("ACP form normalization and answers cover all supported field types", () =>
   assert.throws(() => validateFormContent(form, { single: "a" }), /Missing required/);
 });
 
+test("ACP string patterns reject nonmatching answers", () => {
+  const form = normalizeForm(request({ text: { type: "string", pattern: "^[a-z]+$" } }, ["text"]));
+  assert.equal(validateFormContent(form, { text: "valid" }).text, "valid");
+  assert.throws(() => validateFormContent(form, { text: "INVALID123" }), /does not match its pattern/);
+});
+
 test("invalid or unsupported question schemas fail instead of rendering a false form", () => {
   assert.throws(() => normalizeForm({ mode: "url", requestedSchema: {} }), /Only session-scoped form/);
   assert.throws(() => normalizeForm(request({ secret: { type: "object" } }, ["secret"])), /Unsupported question field type/);

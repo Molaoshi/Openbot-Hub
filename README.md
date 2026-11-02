@@ -83,7 +83,7 @@ npm run test:opencode  # real provider calls; separate live gate
 npm run test:opencode-supervision  # five-call real supervision gate
 ```
 
-The offline suite contains 18 tests covering remote ACP execution, workspace proof, session resume, credential rejection, connectivity health, OpenCode registration validation, concurrent idempotency, per-agent queue order, queued/active stop, process-group cleanup, known-safe retry, unknown-outcome recovery, room lifecycle safeguards, and persistence across restart. Approval coverage includes native `elicitation/create` questions with structured accept/decline/cancel outcomes, complete/redacted permission operation details, wrong-session rejection, invalid and repeated decisions, expiry, waiting stop, active-modification guards, restart recovery, and the persistence-decision race. Hardening regressions also cover nonexistent executables, foreign Origin/Host requests, non-JSON mutations, malformed-state preservation, unique workspaces, and provider-stderr redaction. GitHub Actions runs syntax and offline tests for every PR and push to `main`; browser and live provider acceptance remain local gates.
+The offline suite contains 19 tests covering remote ACP execution, workspace proof, session resume, credential rejection, connectivity health, OpenCode registration validation, concurrent idempotency, per-agent queue order, queued/active stop, process-group cleanup, known-safe retry, unknown-outcome recovery, room lifecycle safeguards, and persistence across restart. Approval coverage includes native `elicitation/create` questions with structured accept/decline/cancel outcomes, enforced string patterns, decimal number submission, complete/redacted permission operation details, wrong-session rejection, invalid and repeated decisions, expiry, waiting stop, active-modification guards, restart recovery, and the persistence-decision race. Hardening regressions also cover nonexistent executables, foreign Origin/Host requests, non-JSON mutations, malformed-state preservation, unique workspaces, and provider-stderr redaction. GitHub Actions runs syntax and offline tests for every PR and push to `main`; browser and live provider acceptance remain local gates.
 
 ## Product plan
 
@@ -115,4 +115,4 @@ docs/                    Architecture and acceptance plans
 - Physical Dell/MacBook enrollment and secure phone access remain deployment work.
 - Upstream OpenBot code is not bundled in the runnable app. Any future copied or modified upstream code must retain its PolyForm Noncommercial 1.0.0 notices.
 
-GitHub remote: `https://github.com/Molaoshi/Openbot-Hub.git`. The repository-local credential helper uses the `openbot-hub-write-pat` macOS Keychain entry; tokens and runtime files remain ignored.
+GitHub remote: `https://github.com/Molaoshi/Openbot-Hub.git`. The repository-local credential helper uses the `github-pat-open-bot-hub` macOS Keychain entry; tokens and runtime files remain ignored.

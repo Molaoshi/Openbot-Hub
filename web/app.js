@@ -144,10 +144,12 @@ function questionField(key, schema, required) {
     control = element("input");
     control.type = schema.type === "number" || schema.type === "integer" ? "number" : "text";
     if (schema.type === "integer") control.step = "1";
+    if (schema.type === "number") control.step = "any";
     if (schema.minimum !== undefined) control.min = String(schema.minimum);
     if (schema.maximum !== undefined) control.max = String(schema.maximum);
     if (schema.minLength !== undefined) control.minLength = schema.minLength;
     if (schema.maxLength !== undefined) control.maxLength = schema.maxLength;
+    if (schema.pattern !== undefined) control.pattern = schema.pattern;
     if (schema.default !== undefined) control.value = String(schema.default);
   }
   control.name = key;

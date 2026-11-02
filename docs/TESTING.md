@@ -59,6 +59,7 @@ The integration tests verify:
 - ACP process-group cleanup and rejection of the in-flight prompt when active work stops.
 - One known-safe fail-once retry with attempt linkage; interrupted and unknown outcomes cannot be retried.
 - Native `elicitation/create` form questions and permission decisions round-trip through `waiting → running`, with structured accept, decline, and cancel outcomes and no repeated decisions.
+- Backend rejection of `INVALID123` against `^[a-z]+$`, plus browser submission of decimal `0.5` through a non-integer number input with `step="any"` and no step mismatch.
 - Complete permission command, raw-input, path/location, content, and diff preservation with redaction and safe-text rendering.
 - The exact persistence race where an approved decision previously could be returned to ACP as cancelled.
 - Waiting stop, wrong-session rejection, approval expiry, active-agent modification guards, and safe restart recovery without pending work or automatic reruns.

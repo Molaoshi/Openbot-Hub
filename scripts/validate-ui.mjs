@@ -188,18 +188,24 @@ try {
     card.querySelector('[name="pm"]').value = 'npm';
     card.querySelector('[name="pm_custom"]').value = 'pnpm';
     card.querySelector('[name="count"]').value = '3';
+    card.querySelector('[name="ratio"]').value = '0.5';
     card.querySelector('[name="verbose"]').checked = true;
     for (const option of card.querySelector('[name="channels"]').options) option.selected = true;
+  })()`);
+  const decimalForm = await cdp.evaluate(`(() => {
+    const ratio = document.querySelector('.approval-question [name="ratio"]');
+    return { step: ratio.step, valid: ratio.form.reportValidity(), stepMismatch: ratio.validity.stepMismatch };
   })()`);
   await cdp.screenshot("desktop-question");
   await cdp.evaluate(`document.querySelector('.approval-question').requestSubmit()`);
   await cdp.wait(`document.querySelector('.approval-card[data-status="answered"]') && document.querySelector('#messages').textContent.includes('Question answers:')`);
   const questionUi = await cdp.evaluate(`(() => {
     const card = document.querySelector('.approval-card[data-status="answered"]');
-    return card.textContent.includes('"pm": "npm"') && card.textContent.includes('"pm_custom": "pnpm"') && card.textContent.includes('"count": 3') && document.querySelector('#messages').textContent.includes('\\"pm\\":\\"npm\\"');
+    return card.textContent.includes('"pm": "npm"') && card.textContent.includes('"pm_custom": "pnpm"') && card.textContent.includes('"count": 3') && card.textContent.includes('"ratio": 0.5') && document.querySelector('#messages').textContent.includes('\\"pm\\":\\"npm\\"');
   })()`);
+  const decimalSubmission = decimalForm.step === 'any' && decimalForm.valid && !decimalForm.stepMismatch && questionUi;
 
-  const supervision = { executionVisible, connectivity, retryUi, stoppedUi, approvalUi, approvalDetails, questionUi };
+  const supervision = { executionVisible, connectivity, retryUi, stoppedUi, approvalUi, approvalDetails, questionUi, decimalSubmission };
 
   await cdp.evaluate(`document.querySelector('#add-agent-button').click()`);
   await cdp.wait(`document.querySelector('#agent-dialog').open`);
