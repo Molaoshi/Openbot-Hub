@@ -3,6 +3,7 @@ import { dirname, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { AgentRuntime } from "./agent-runtime.mjs";
 import { normalizeForm, protocolValue, validateFormContent } from "./elicitation.mjs";
+import { normalizeExecutionEvent } from "./execution-events.mjs";
 import { redactError } from "./redact.mjs";
 
 const MAX_TURNS_PER_REQUEST = 6;
@@ -80,10 +81,11 @@ export class Hub {
     if (!rooms.some((room) => room.id === "army")) rooms.unshift(armyRoom());
     const recoveredAt = new Date().toISOString();
     const executions = (saved?.executions ?? []).map((execution) => {
-      if (!["queued", "running", "waiting"].includes(execution.status)) return execution;
+      const withEvents = { ...execution, events: Array.isArray(execution.events) ? execution.events : [] };
+      if (!["queued", "running", "waiting"].includes(execution.status)) return withEvents;
       const error = "The hub restarted before this execution finished; its outcome is unknown and it was not rerun.";
       return {
-        ...execution,
+        ...withEvents,
         status: "unknown",
         updatedAt: recoveredAt,
         endedAt: recoveredAt,
@@ -137,6 +139,7 @@ export class Hub {
         this.emit("change");
       },
       onRequest: (request) => this.requestApproval(request),
+      onNotification: (notification) => this.recordExecutionEvent(notification),
     });
     await mkdir(dirname(this.statePath), { recursive: true });
     await this.save();
@@ -442,6 +445,7 @@ export class Hub {
         retrySafe: false,
         error: null,
         resultMessageId: null,
+        events: [],
         history: [{ from: null, to: "queued", at }],
       };
     });
@@ -616,6 +620,43 @@ export class Hub {
     return approval;
   }
 
+  async recordExecutionEvent({ agentId, executionId, sessionId, params }) {
+    const normalized = normalizeExecutionEvent(params);
+    if (!normalized) return null;
+    const execution = this.execution(executionId);
+    const agent = this.definitionPublic(agentId);
+    const currentSession = this.state.agents.find((candidate) => candidate.id === agentId)?.sessionId;
+    if (execution.agentId !== agentId || currentSession !== sessionId || !["running", "waiting"].includes(execution.status)) return null;
+    execution.events ??= [];
+    const at = new Date().toISOString();
+    let event = normalized.type === "tool"
+      ? execution.events.find((candidate) => candidate.kind === "tool" && candidate.toolCallId === normalized.toolCallId)
+      : execution.events.find((candidate) => candidate.kind === "plan");
+    if (event) {
+      event.title = normalized.title || event.title;
+      event.status = normalized.status || event.status;
+      event.updatedAt = at;
+      if (normalized.type === "tool") event.operation = { ...event.operation, ...normalized.operation };
+      else event.entries = normalized.entries;
+    } else {
+      event = {
+        id: randomUUID(),
+        kind: normalized.type,
+        nodeId: agent.nodeId,
+        title: normalized.title,
+        status: normalized.status,
+        createdAt: at,
+        updatedAt: at,
+        ...(normalized.type === "tool" ? { toolCallId: normalized.toolCallId, operation: normalized.operation } : { entries: normalized.entries }),
+      };
+      execution.events.push(event);
+      if (execution.events.length > 100) execution.events.splice(0, execution.events.length - 100);
+    }
+    await this.save();
+    this.emit("change");
+    return event;
+  }
+
   async execute(executionId) {
     const execution = this.state.executions.find((candidate) => candidate.id === executionId);
     if (!execution) throw problem("Execution not found.", 404);
@@ -719,6 +760,7 @@ export class Hub {
       retrySafe: false,
       error: null,
       resultMessageId: null,
+      events: [],
       history: [{ from: null, to: "queued", at }],
     };
     this.state.executions.push(execution);

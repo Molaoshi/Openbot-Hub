@@ -2,16 +2,19 @@ import { spawn } from "node:child_process";
 import { redactError } from "./redact.mjs";
 
 export class AcpClient {
-  constructor({ command, args, env = {}, cwd, requestTimeoutMs = 120_000, onRequest = null }) {
+  constructor({ command, args, env = {}, cwd, requestTimeoutMs = 120_000, onRequest = null, onNotification = null }) {
     this.command = command;
     this.args = args;
     this.env = env;
     this.cwd = cwd;
     this.requestTimeoutMs = requestTimeoutMs;
     this.onRequest = onRequest;
+    this.onNotification = onNotification;
     this.child = null;
     this.pending = new Map();
     this.notifications = [];
+    this.notificationQueue = Promise.resolve();
+    this.notificationError = null;
     this.nextId = 1;
     this.buffer = "";
     this.stderr = "";
@@ -115,9 +118,26 @@ export class AcpClient {
           pending.reject(error);
         } else pending.resolve(message.result);
       } else if (message.method === "session/update") {
-        this.notifications.push(message.params);
+        this.#queueNotification(message.params);
       }
     }
+  }
+
+  #queueNotification(params) {
+    this.notificationQueue = this.notificationQueue.then(async () => {
+      this.notifications.push(params);
+      if (this.onNotification) await this.onNotification(params);
+    }).catch((error) => {
+      this.notificationError ??= error;
+    });
+  }
+
+  async settleNotifications() {
+    await this.notificationQueue;
+    if (!this.notificationError) return;
+    const error = this.notificationError;
+    this.notificationError = null;
+    throw error;
   }
 
   request(method, params = {}) {
@@ -139,12 +159,14 @@ export class AcpClient {
     if (sessionId) {
       try {
         await this.request("session/load", { sessionId, cwd, mcpServers: [] });
+        await this.settleNotifications();
         return sessionId;
       } catch (error) {
         if (!/not found/i.test(error.message)) throw error;
       }
     }
     const created = await this.request("session/new", { cwd, mcpServers: [] });
+    await this.settleNotifications();
     return created.sessionId;
   }
 
@@ -154,6 +176,7 @@ export class AcpClient {
       sessionId,
       prompt: [{ type: "text", text }],
     });
+    await this.settleNotifications();
     const answer = this.notifications.slice(baseline)
       .filter((entry) => entry.sessionId === sessionId && entry.update?.sessionUpdate === "agent_message_chunk")
       .map((entry) => entry.update.content?.text ?? "")

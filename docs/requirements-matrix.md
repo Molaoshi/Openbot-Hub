@@ -6,22 +6,23 @@ This is the implementation and acceptance index for `docs/product-requirements.m
 
 - **CHECK:** `npm run check` — JavaScript syntax validation.
 - **APP:** `node --test tests/hub-app.test.mjs` — registry, rooms, API routing, idempotency, restart integration, foreign request rejection, and malformed-state preservation.
+- **PROG:** `node --test tests/execution-events.test.mjs` — tool/plan normalization and redaction, pending-to-completed coalescing, result/output preservation, authoritative Mini/Dell node attribution, restart persistence, and legacy execution loading.
 - **ACP:** `node --test tests/remote-acp.test.mjs` — connector execution, workspace proof, resume, and credential rejection.
 - **SUP:** `node --test tests/supervision.test.mjs` — connectivity, startup-failure containment, redaction, unique workspaces, concurrent idempotency, queue ordering, fake stop, safe retry, and active-deletion safeguards.
 - **DEC:** `node --test tests/approvals.test.mjs tests/elicitation.test.mjs` — native `elicitation/create` questions, complete/redacted operation details, permission allow/reject, question accept/decline/cancel, session binding, invalid/repeated decisions, expiry, waiting stop, active-modification guards, restart recovery, the persistence-decision race, and ACP process-group cleanup.
 - **CI:** `.github/workflows/test.yml` — runs CHECK and all offline tests for every PR and push to `main`; browser and live provider evidence remains local.
-- **UI:** `npm run test:ui` — isolated Chrome desktop and 390 px phone acceptance, including visible permission command/path/diff details and native question accept/decline flows; artifacts are written under ignored `artifacts/ui-validation/`.
-- **REAL:** `npm run test:opencode` — two small live OpenCode calls covering native file evidence, identity, lifecycle, isolated task artifacts, credential-field isolation, and native session resume after Hub restart; report under ignored `artifacts/opencode-acceptance/`.
+- **UI:** `npm run test:ui` — isolated Chrome desktop and 390 px phone acceptance, including pending/completed tool and plan progress, raw command/output, failure rendering, node labels, visible permission command/path/diff details, and native question accept/decline flows; artifacts are written under ignored `artifacts/ui-validation/`.
+- **REAL:** `npm run test:opencode` — two small live OpenCode calls covering native file evidence, a completed real tool event with result evidence and `mac-mini` attribution, zero replay duplicates, identity, lifecycle, isolated task artifacts, credential-field isolation, and native session resume after Hub restart; report under ignored `artifacts/opencode-acceptance/`.
 - **REAL-SUP:** `npm run test:opencode-supervision` — five small live calls proving native permission approval with complete operation details, a real OpenCode form question, active stop, induced provider failure, descendant cleanup, and post-failure recovery in the same native session; report under ignored `artifacts/opencode-supervision/`.
 - **SVC:** `launchctl print gui/$(id -u)/com.molaoshi.openbot-hub` plus health/state checks and an intentional `kickstart -k` restart.
 
-`npm test` runs APP, ACP, SUP, and DEC. UI requires macOS and Google Chrome. Future physical-phone, Dell, MacBook, security, and backup gates require their own recorded evidence; local simulation is not a substitute.
+`npm test` runs APP, PROG, ACP, SUP, and DEC. UI requires macOS and Google Chrome. Future physical-phone, Dell, MacBook, security, and backup gates require their own recorded evidence; local simulation is not a substitute.
 
 ## Status summary
 
 - **M0:** Local foundation; mostly complete, with broader requirements still partial.
 - **M1:** Complete, including real OpenCode stop/failure supervision under EXEC-03.
-- **M2:** Active; real OpenCode native execution, session resume, supervision, detailed approvals, and native form questions passed on 2026-11-02, while rich progress and file exchange remain open.
+- **M2:** Active; real OpenCode native execution, session resume, supervision, detailed approvals, native form questions, and rich progress passed on 2026-11-03, while file exchange remains open.
 - **M3–M5:** Planned; see `docs/migration-plan.md`.
 - No P0/P1 requirement may be called Done from implementation alone; the evidence column must actually pass.
 
@@ -60,7 +61,7 @@ This is the implementation and acceptance index for `docs/product-requirements.m
 | EXEC-03 | M1 | Done | SUP and UI stop queued/active fake turns; DEC proves process-group cleanup. REAL-SUP passes real active stop, stopped-tool cleanup, induced provider failure, crashed-tool cleanup, a fresh ACP process, and subsequent execution in the same native session. |
 | EXEC-04 | M1 | Done | APP/SUP prove unknown recovery without reruns, rejected unknown/interrupted retries, one known-safe fail-once retry, and completed attempt-two linking; UI exercises safe retry. |
 | EXEC-05 | M2 | Done | DEC's 9 tests pass native `elicitation/create` questions, structured accept/decline/cancel, backend string-pattern rejection, complete/redacted operation details, permission allow/reject, wrong-session rejection, invalid/repeated decisions, expiry, waiting stop, terminal persistence, restart recovery, and the exact persistence-decision race. UI passes detailed desktop/mobile approval, native question flows, and `0.5` decimal submission with `step="any"`; REAL-SUP passes five calls including a detailed native OpenCode permission and genuine form-question round trip in the same session. |
-| EXEC-06 | M2 | Next | Display realistic tool/progress events and verify node attribution and failure rendering in APP/UI. |
+| EXEC-06 | M2 | Done | PROG passes tool/plan normalization and redaction, pending-to-completed coalescing, raw input/output preservation, authoritative `mac-mini`/`demo-dell` attribution, restart persistence, and legacy execution loading. UI passes pending/completed progress, command/output, plan, failure, node-label, and 390 px overflow checks. REAL passes one completed native OpenCode tool with result evidence and `mac-mini` attribution, plus zero replay duplicates after restart. |
 | EXEC-07 | M2 | Done | ACP proves fake node/workspace/hostname evidence; REAL verifies OpenCode `mac-mini` reply identity, origin linkage, exact workspace file content, and no unexpected task artifacts elsewhere in the isolated acceptance root. Physical-node evidence remains under M4. |
 
 ## Teams and coordination
@@ -117,4 +118,4 @@ This is the implementation and acceptance index for `docs/product-requirements.m
 
 ## Current release conclusion
 
-OpenBot Hub is a verified local application with M1 supervision complete and M2 active, not full-feature V1. All 19 offline tests pass, and one real OpenCode adapter has passed five supervision calls plus the separate file/session gate, covering native file, identity, lifecycle, session resume, detailed permission, genuine form-question, stop/failure supervision, and descendant cleanup. The remaining M2 file-exchange and rich-progress gates are open. Physical devices, other real harnesses, and production readiness must not be inferred from this local adapter or phone-sized-browser evidence.
+OpenBot Hub is a verified local application with M1 supervision complete and M2 active, not full-feature V1. All 21 offline tests pass, desktop and 390 px browser acceptance passes, and one real OpenCode adapter has passed five supervision calls plus the separate file/session gate, covering native file, identity, lifecycle, session resume, completed real tool progress with no replay duplicates, detailed permission, genuine form-question, stop/failure supervision, and descendant cleanup. The remaining M2 file-exchange gate is open. Physical devices, other real harnesses, and production readiness must not be inferred from this local adapter or phone-sized-browser evidence.

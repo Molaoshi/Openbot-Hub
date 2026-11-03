@@ -109,6 +109,7 @@ function renderOperation(decision, operation) {
       }
     }
   }
+  if (operation.rawOutput !== undefined) operationDetail(decision, "Complete operation output", JSON.stringify(operation.rawOutput, null, 2));
 }
 
 function questionChoices(schema, multiple = false) {
@@ -174,6 +175,30 @@ function questionAnswers(form) {
   return content;
 }
 
+function executionEvent(event) {
+  const card = element("section", "execution-event");
+  card.dataset.eventId = event.id;
+  card.dataset.kind = event.kind;
+  card.dataset.status = event.status;
+  const header = element("div", "execution-event-header");
+  header.append(
+    element("strong", "", `${event.kind === "plan" ? "Plan" : "Tool"} · ${event.title}`),
+    element("span", `execution-event-status status-${event.status}`, event.status.toUpperCase()),
+  );
+  card.append(header, element("span", "execution-meta", `${event.nodeId} · ${time(event.updatedAt)}`));
+  if (event.kind === "plan") {
+    const entries = element("ol", "execution-plan");
+    for (const entry of event.entries ?? []) {
+      const item = element("li", "execution-plan-entry");
+      item.dataset.status = entry.status;
+      item.append(element("span", "", entry.content), element("small", "execution-meta", `${entry.status}${entry.priority ? ` · ${entry.priority}` : ""}`));
+      entries.append(item);
+    }
+    card.append(entries);
+  } else renderOperation(card, event.operation);
+  return card;
+}
+
 function executionCard(execution) {
   const agent = state.agents.find((candidate) => candidate.id === execution.agentId);
   const card = element("article", "execution-card");
@@ -216,6 +241,11 @@ function executionCard(execution) {
   }
   card.append(identity, status, controls);
   if (execution.error) card.append(element("div", "execution-error", execution.error));
+  if (execution.events?.length) {
+    const events = element("div", "execution-events");
+    for (const event of execution.events) events.append(executionEvent(event));
+    card.append(events);
+  }
   for (const approval of state.approvals.filter((candidate) => candidate.executionId === execution.id)) {
     const decision = element("div", "approval-card");
     decision.dataset.approvalId = approval.id;

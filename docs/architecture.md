@@ -51,6 +51,7 @@ Owns:
 - Project-room rename, purpose/membership editing, and confirmed history deletion.
 - Persistent agent definitions and references to their harness sessions.
 - Per-agent execution queues and persisted supervision records.
+- Durable, size-bounded tool and plan progress on each execution, with coalesced tool updates, sanitized operation input/output, and authoritative execution-node attribution.
 - Room-bound ACP permission requests and native form questions with explicit pending and terminal decision records; permission operation details are preserved, redacted, and rendered as text.
 - Direct mentions, room-scoped `@everyone`, idempotent user-post receipts, and a six-turn request limit.
 - Live browser updates over server-sent events.
@@ -102,7 +103,7 @@ The Army room is global and always addresses every enabled agent. Project rooms 
 4. Each selected agent enters its own serial queue.
 5. The runtime creates or resumes the agent's durable ACP session.
 6. Local agents execute directly; remote agents pass through the authenticated node connector.
-7. ACP `session/request_permission` requests pause the execution as `waiting` and appear in the originating room with the complete sanitized operation snapshot. The browser renders commands, raw input, paths/locations, content, and diffs as text before Mo selects an option. ACP `elicitation/create` form questions use the same room and execution binding; structured answers, decline, and cancel return to the native session. Rejection, expiry, stop, and provider failure produce explicit terminal records.
+7. ACP `session/update` notifications are handled sequentially and bound to the active execution/session; session-load replay is drained before activation. Tool calls and plans persist as coalesced, redacted execution events with Hub-assigned node IDs, and `prompt` waits for event persistence before returning. ACP `session/request_permission` requests pause the execution as `waiting` and appear in the originating room with the complete sanitized operation snapshot. The browser renders commands, raw input, paths/locations, content, and diffs as text before Mo selects an option. ACP `elicitation/create` form questions use the same room and execution binding; structured answers, decline, and cancel return to the native session. Rejection, expiry, stop, and provider failure produce explicit terminal records.
 8. Replies return to the originating room with author, origin, and execution-node identity.
 9. Saved session IDs are reused after application restart.
 
@@ -116,7 +117,7 @@ A repeated client message ID returns the original receipt and starts no new exec
 - Manual stops and unexpected provider exits clean up the ACP process tree; subsequent work starts a fresh ACP process without creating a second native session.
 - Permission and question decisions are bound to the exact execution and native session. Pending decisions cannot be answered twice, answered with an invalid value, or resumed after stop, expiry, provider failure, or restart. The pending resolver and expiry timer are registered before persistence, so a recorded selection cannot be returned to ACP as a cancellation.
 - Active agents cannot be edited or removed; room deletion removes that room's execution and approval history only after active work stops.
-- Provider and connector errors are redacted before health records, execution history, room messages, or HTTP responses persist or display them.
+- Provider and connector errors are redacted before health records, execution history, room messages, or HTTP responses persist or display them. Progress titles and operation payloads use the same redaction path, retained events are capped, and an event-persistence failure rejects the active prompt rather than reporting false success.
 
 ## Workspace and tool rules
 
@@ -142,8 +143,9 @@ Implemented and tested:
 - Local and remote-ACP fake agents plus a real local OpenCode ACP adapter.
 - Durable native/demo sessions and state.
 - Node-tagged replies and execution evidence.
+- Durable coalesced tool/plan progress with operation input/output, failure display, and execution-node labels on desktop and at 390 px.
 - Room-scoped `@everyone`, duplicate-post suppression, supervision, and restart recovery.
-- Real OpenCode native file and post-restart session-recall acceptance.
+- Real OpenCode native file, completed tool-progress, replay-suppression, and post-restart session-recall acceptance.
 - Real OpenCode detailed permission, native form-question, active-stop, provider-failure, descendant-cleanup, and post-failure recovery acceptance.
 - Room-bound approval/rejection and native question accept/decline/cancel controls on desktop and at 390 px.
 - Desktop and 390 px mobile chat, drawer, management-form, and OpenCode-form acceptance.
@@ -153,5 +155,5 @@ Not yet implemented:
 - Reusable teams and controlled delegation.
 - Physical Dell and MacBook enrollment.
 - DSH, Hermes, or Grok adapters.
-- Attachments, generated-file return, and rich tool rendering.
+- Attachments and generated-file return.
 - Network user authentication and production hardening.
