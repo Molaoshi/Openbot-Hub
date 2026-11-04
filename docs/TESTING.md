@@ -74,6 +74,7 @@ The integration tests verify:
 - No duplicate message or execution when a `clientMessageId` is repeated.
 - Attachment content and SHA-256 verification, identical retry deduplication, conflicting-receipt rejection, type/size/path/content rejection, and aborted-transfer cleanup.
 - Room-bound, single-message attachment use, identical bytes delivered to Mini and remote Dell workspaces, and verified downloads after restart.
+- Room deletion blocked during a delayed upload, successful deletion after settlement, and aborted transfers releasing the deletion guard without orphaned metadata or bytes.
 - Legacy-state attachment defaults and room deletion removing attachment metadata, receipts, and stored files.
 - Registry, room, conversation, execution, approval, attachment, and session persistence after an application restart.
 

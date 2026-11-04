@@ -119,7 +119,7 @@ A repeated client message ID returns the original receipt and starts no new exec
 - ACP spawn/stream failures reject pending work and reset startup state rather than terminating the Node process.
 - Manual stops and unexpected provider exits clean up the ACP process tree; subsequent work starts a fresh ACP process without creating a second native session.
 - Permission and question decisions are bound to the exact execution and native session. Pending decisions cannot be answered twice, answered with an invalid value, or resumed after stop, expiry, provider failure, or restart. The pending resolver and expiry timer are registered before persistence, so a recorded selection cannot be returned to ACP as a cancellation.
-- Active agents cannot be edited or removed; room deletion removes that room's execution and approval history only after active work stops. It also removes attachment metadata, upload receipts, and stored files belonging to that room.
+- Active agents cannot be edited or removed; room deletion is blocked during active work or attachment uploads. Once those settle, deletion removes that room's execution and approval history plus attachment metadata, upload receipts, and stored files. Pending-upload guards release on success and failure.
 - Provider and connector errors are redacted before health records, execution history, room messages, or HTTP responses persist or display them. Progress titles and operation payloads use the same redaction path, retained events are capped, and an event-persistence failure rejects the active prompt rather than reporting false success.
 
 ## Workspace and tool rules

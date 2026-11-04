@@ -284,6 +284,67 @@ test("Mini and remote Dell receive identical bytes, downloads survive restart, a
   assert.equal(Object.values(JSON.parse(await readFile(join(directory, "hub-state.json"), "utf8")).attachmentReceipts).includes(disposableUpload.attachment.id), false);
 });
 
+test("room deletion waits for delayed uploads and releases guards after aborted transfers", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "openbot-hub-upload-race-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const statePath = join(directory, "state.json");
+  const hub = new Hub({ root: directory, statePath, agents: [] });
+  await hub.load();
+  const room = await hub.createRoom({ name: "Delayed uploads", purpose: "Upload deletion race", agentIds: [] });
+  const deferred = () => {
+    let resolve;
+    const promise = new Promise((resolvePromise) => { resolve = resolvePromise; });
+    return { promise, resolve };
+  };
+  const started = deferred();
+  const resume = deferred();
+  async function* delayedBody() {
+    started.resolve();
+    yield "delayed ";
+    await resume.promise;
+    yield "payload";
+  }
+  const pendingUpload = hub.uploadAttachment(room.id, {
+    name: "delayed.txt",
+    mediaType: "text/plain",
+    clientAttachmentId: "delayed-upload",
+    body: delayedBody(),
+  });
+  await started.promise;
+  const deletionError = await hub.removeRoom(room.id, "delete-history")
+    .then(() => null, (error) => error)
+    .finally(() => resume.resolve());
+  assert.equal(deletionError?.status, 409);
+  assert.match(deletionError.message, /attachment upload is active/);
+  const uploaded = await pendingUpload;
+  assert.equal(uploaded.duplicate, false);
+  assert.deepEqual(await readFile(join(directory, "attachments", uploaded.attachment.id), "utf8"), "delayed payload");
+
+  const abortStarted = deferred();
+  async function* abortedBody() {
+    abortStarted.resolve();
+    yield "partial";
+    throw new Error("Simulated aborted transfer");
+  }
+  const abortedUpload = hub.uploadAttachment(room.id, {
+    name: "aborted.txt",
+    mediaType: "text/plain",
+    clientAttachmentId: "aborted-upload",
+    body: abortedBody(),
+  });
+  await abortStarted.promise;
+  await assert.rejects(abortedUpload, /Simulated aborted transfer/);
+
+  const removed = await hub.removeRoom(room.id, "delete-history");
+  assert.equal(removed.deletedAttachments, 1);
+  assert.equal(await readFile(join(directory, "attachments", uploaded.attachment.id), "utf8").catch((error) => error.code), "ENOENT");
+  assert.deepEqual(await readdir(join(directory, "attachments")), []);
+  assert.deepEqual(hub.state.attachments, []);
+  const persisted = JSON.parse(await readFile(statePath, "utf8"));
+  assert.deepEqual(persisted.attachments, []);
+  assert.deepEqual(persisted.attachmentReceipts, {});
+});
+
 test("legacy state loads with empty attachment metadata and limits", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "openbot-hub-legacy-attachments-"));
   t.after(() => rm(directory, { recursive: true, force: true }));

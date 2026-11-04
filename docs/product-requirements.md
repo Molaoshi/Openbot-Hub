@@ -2,7 +2,7 @@
 
 - **Document status:** Authoritative product baseline
 - **Version:** 1.0
-- **Date:** 2026-11-03
+- **Date:** 2026-11-04
 - **Owner:** Mo
 
 This document defines what OpenBot Hub must become and what “full-feature ready” means. `docs/migration-plan.md` defines delivery order. `docs/requirements-matrix.md` tracks implementation and acceptance evidence.

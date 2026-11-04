@@ -58,6 +58,7 @@ export class Hub {
     this.saveQueue = Promise.resolve();
     this.pendingApprovals = new Map();
     this.approvalTimers = new Map();
+    this.pendingAttachmentUploads = new Map();
     this.attachmentStore = new AttachmentStore(resolve(dirname(statePath), "attachments"));
   }
 
@@ -281,6 +282,9 @@ export class Hub {
     if (this.state.executions.some((execution) => execution.roomId === room.id && ["queued", "running", "waiting"].includes(execution.status))) {
       throw problem("Room deletion is blocked while work is active.", 409);
     }
+    if (this.pendingAttachmentUploads.get(room.id)) {
+      throw problem("Room deletion is blocked while an attachment upload is active.", 409);
+    }
     const deletedMessages = this.state.messages.filter((message) => message.roomId === room.id);
     const deletedMessageIds = new Set(deletedMessages.map((message) => message.id));
     const deletedExecutions = this.state.executions.filter((execution) => execution.roomId === room.id).length;
@@ -423,43 +427,50 @@ export class Hub {
     const receipt = clean(clientAttachmentId);
     if (!receipt || receipt.length > 128 || /[\u0000-\u001f\u007f]/.test(receipt)) throw problem("A stable client attachment ID of at most 128 characters is required.");
     const key = `${room.id}:${receipt}`;
-    const saved = await this.attachmentStore.save({ name: safeName, mediaType: safeMediaType, body });
-    const existingId = this.state.attachmentReceipts[key];
-    if (existingId) {
-      try {
-        const existing = this.state.attachments.find((attachment) => attachment.id === existingId);
-        if (!existing) throw problem("The attachment receipt points to missing metadata.", 409);
-        const [original, duplicate] = await Promise.all([this.attachmentStore.read(existing), this.attachmentStore.read(saved)]);
-        if (existing.name !== saved.name || existing.mediaType !== saved.mediaType || !original.equals(duplicate)) {
-          throw problem("This client attachment ID was already used for different content.", 409);
-        }
-        return { attachment: publicAttachment(existing), duplicate: true };
-      } finally {
-        await this.attachmentStore.remove(saved.id);
-      }
-    }
-    const attachment = {
-      id: saved.id,
-      roomId: room.id,
-      name: saved.name,
-      mediaType: saved.mediaType,
-      size: saved.size,
-      sha256: saved.sha256,
-      createdAt: saved.createdAt,
-      messageId: null,
-    };
-    this.state.attachments.push(attachment);
-    this.state.attachmentReceipts[key] = attachment.id;
+    this.pendingAttachmentUploads.set(room.id, (this.pendingAttachmentUploads.get(room.id) ?? 0) + 1);
     try {
-      await this.save();
-    } catch (error) {
-      this.state.attachments = this.state.attachments.filter((candidate) => candidate.id !== attachment.id);
-      delete this.state.attachmentReceipts[key];
-      await this.attachmentStore.remove(attachment.id);
-      throw error;
+      const saved = await this.attachmentStore.save({ name: safeName, mediaType: safeMediaType, body });
+      const existingId = this.state.attachmentReceipts[key];
+      if (existingId) {
+        try {
+          const existing = this.state.attachments.find((attachment) => attachment.id === existingId);
+          if (!existing) throw problem("The attachment receipt points to missing metadata.", 409);
+          const [original, duplicate] = await Promise.all([this.attachmentStore.read(existing), this.attachmentStore.read(saved)]);
+          if (existing.name !== saved.name || existing.mediaType !== saved.mediaType || !original.equals(duplicate)) {
+            throw problem("This client attachment ID was already used for different content.", 409);
+          }
+          return { attachment: publicAttachment(existing), duplicate: true };
+        } finally {
+          await this.attachmentStore.remove(saved.id);
+        }
+      }
+      const attachment = {
+        id: saved.id,
+        roomId: room.id,
+        name: saved.name,
+        mediaType: saved.mediaType,
+        size: saved.size,
+        sha256: saved.sha256,
+        createdAt: saved.createdAt,
+        messageId: null,
+      };
+      this.state.attachments.push(attachment);
+      this.state.attachmentReceipts[key] = attachment.id;
+      try {
+        await this.save();
+      } catch (error) {
+        this.state.attachments = this.state.attachments.filter((candidate) => candidate.id !== attachment.id);
+        delete this.state.attachmentReceipts[key];
+        await this.attachmentStore.remove(attachment.id);
+        throw error;
+      }
+      this.emit("change");
+      return { attachment: publicAttachment(attachment), duplicate: false };
+    } finally {
+      const remaining = this.pendingAttachmentUploads.get(room.id) - 1;
+      if (remaining > 0) this.pendingAttachmentUploads.set(room.id, remaining);
+      else this.pendingAttachmentUploads.delete(room.id);
     }
-    this.emit("change");
-    return { attachment: publicAttachment(attachment), duplicate: false };
   }
 
   async attachmentContent(attachmentId) {
